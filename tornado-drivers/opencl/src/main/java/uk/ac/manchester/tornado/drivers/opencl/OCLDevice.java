@@ -54,7 +54,7 @@ public class OCLDevice implements OCLTargetDevice {
     private long localMemorySize;
     private int maxWorkItemDimensions;
     private long[] maxWorkItemSizes;
-    private int maxWorkGroupSize;
+    private long maxWorkGroupSize;
     private long maxConstantBufferSize;
     private long doubleFPConfig;
     private long singleFPConfig;
@@ -334,9 +334,9 @@ public class OCLDevice implements OCLTargetDevice {
         return maxWorkItemSizes;
     }
 
-    private int getDeviceMaxWorkGroupSize_0() {
+    private long getDeviceMaxWorkGroupSize_0() {
         queryOpenCLAPI(OCLDeviceInfo.CL_DEVICE_MAX_WORK_GROUP_SIZE.getValue());
-        maxWorkGroupSize = buffer.getInt();
+        maxWorkGroupSize = buffer.getLong();
         return maxWorkGroupSize;
     }
 
@@ -350,7 +350,7 @@ public class OCLDevice implements OCLTargetDevice {
     }
 
     @Override
-    public int getMaxThreadsPerBlock() {
+    public long getMaxThreadsPerBlock() {
         return maxWorkGroupSize;
     }
 
