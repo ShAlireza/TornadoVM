@@ -237,7 +237,8 @@ public class TornadoExecutionPlan implements AutoCloseable {
     }
 
     public TornadoExecutionPlan withGridScheduler(Map<String, GridScheduler> gridSchedulerMap) {
-
+        tornadoExecutor.withGridScheduler(gridSchedulerMap);
+        return this;
     }
 
     /**
