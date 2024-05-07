@@ -192,4 +192,8 @@ public class ImmutableTaskGraph {
     void withGridScheduler(GridScheduler gridScheduler) {
         taskGraph.withGridScheduler(gridScheduler);
     }
+
+    public String getTaskGraphName() {
+        return taskGraph.getTaskGraphName();
+    }
 }

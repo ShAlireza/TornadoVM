@@ -20,6 +20,7 @@ package uk.ac.manchester.tornado.api;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -235,6 +236,10 @@ public class TornadoExecutionPlan implements AutoCloseable {
         return this;
     }
 
+    public TornadoExecutionPlan withGridScheduler(Map<String, GridScheduler> gridSchedulerMap) {
+
+    }
+
     /**
      * Notify the TornadoVM runtime system to utilize the default thread scheduler.
      *
@@ -408,6 +413,12 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
         void withGridScheduler(GridScheduler gridScheduler) {
             immutableTaskGraphList.forEach(immutableTaskGraph -> immutableTaskGraph.withGridScheduler(gridScheduler));
+        }
+
+        void withGridScheduler(final Map<String, GridScheduler> gridSchedulerMap) {
+            immutableTaskGraphList.forEach(
+                    immutableTaskGraph -> immutableTaskGraph.withGridScheduler(gridSchedulerMap.get(immutableTaskGraph.getTaskGraphName()))
+            );
         }
 
         void warmup() {
