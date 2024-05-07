@@ -14,15 +14,13 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Authors: James Clarkson
  *
  */
 package uk.ac.manchester.tornado.drivers.opencl;
@@ -64,7 +62,6 @@ import uk.ac.manchester.tornado.runtime.tasks.meta.TaskMetaData;
 public class OCLCodeCache {
 
     private static final String FALSE = "False";
-    private static final String TRUE = "True";
     private static final int SPIRV_MAGIC_NUMBER = 119734787;
     private static final String OPENCL_SOURCE_SUFFIX = ".cl";
     private final boolean OPENCL_CACHE_ENABLE = Boolean.parseBoolean(getProperty("tornado.opencl.codecache.enable", FALSE));
@@ -137,8 +134,8 @@ public class OCLCodeCache {
 
     private void assertIfQuartusHLSIsPresent() {
         if (System.getenv("QUARTUS_ROOT_DIR") == null) {
-            throw new TornadoRuntimeException("[ERROR] The FPGA compiler (" + fpgaCompiler
-                    + ") requires the installation of the Intel(R) Quartus(R) Prime software. You can check if Quartus is installed and whether the QUARTUS_ROOT_DIR variable is properly set.");
+            throw new TornadoRuntimeException(
+                    "[ERROR] The FPGA compiler (" + fpgaCompiler + ") requires the installation of the Intel(R) Quartus(R) Prime software. You can check if Quartus is installed and whether the QUARTUS_ROOT_DIR variable is properly set.");
         }
     }
 
@@ -445,7 +442,7 @@ public class OCLCodeCache {
     }
 
     private boolean shouldGenerateXilinxBitstream(File fpgaBitStreamFile, OCLDeviceContextInterface deviceContext) {
-        if (!RuntimeUtilities.ifFileExists(fpgaBitStreamFile)) {
+        if (!fpgaBitStreamFile.exists()) {
             return (deviceContext.getPlatformContext().getPlatform().getVendor().equals("Xilinx"));
         } else {
             return false;
@@ -480,7 +477,7 @@ public class OCLCodeCache {
         return deviceContext.getPlatformContext().getPlatform().getVendor().toLowerCase().split("\\(")[0];
     }
 
-    OCLInstalledCode installFPGASource(String id, String entryPoint, byte[] source, boolean shouldCompile) { // TODO Override this method for each FPGA backend
+    OCLInstalledCode installFPGASource(String id, String entryPoint, byte[] source, boolean shouldCompile, boolean printKernel) { // TODO Override this method for each FPGA backend
         String[] compilationCommand;
         final String inputFile = fpgaSourceDir + entryPoint + OPENCL_SOURCE_SUFFIX;
         final String outputFile = fpgaSourceDir + entryPoint;
@@ -488,7 +485,9 @@ public class OCLCodeCache {
 
         appendSourceToFile(source, entryPoint);
 
-        RuntimeUtilities.maybePrintSource(source);
+        if (printKernel) {
+            RuntimeUtilities.dumpKernel(source);
+        }
 
         String[] commandRename;
         String[] linkCommand = null;
@@ -529,7 +528,7 @@ public class OCLCodeCache {
             commandRename = new String[] { FPGA_CLEANUP_SCRIPT, vendor, fpgaSourceDir, entryPoint };
             Path path = Paths.get(outputFile);
             addNewEntryInBitstreamHashMap(id, outputFile);
-            if (RuntimeUtilities.ifFileExists(fpgaBitStreamFile)) {
+            if (fpgaBitStreamFile.exists()) {
                 return installEntryPointForBinaryForFPGAs(id, path, entryPoint);
             } else {
                 invokeShellCommand(compilationCommand);
@@ -585,7 +584,9 @@ public class OCLCodeCache {
             appendSourceToFile(source, entryPoint);
         }
 
-        RuntimeUtilities.maybePrintSource(source);
+        if (meta.isPrintKernelEnabled()) {
+            RuntimeUtilities.dumpKernel(source);
+        }
 
         final long t0 = System.nanoTime();
         program.build(meta.getCompilerFlags());
@@ -601,16 +602,16 @@ public class OCLCodeCache {
                 debug(log);
             }
             final Path outDir = resolveLogDirectory();
-            final String identifier = id + "-" + entryPoint;
+            final String identifier = STR."\{id}-\{entryPoint}";
             error("Unable to compile task %s: check logs at %s/%s.log", identifier, outDir.toAbsolutePath(), identifier);
 
-            File file = new File(outDir + "/" + identifier + ".log");
+            File file = new File(STR."\{outDir}/\{identifier}.log");
             try (FileOutputStream fos = new FileOutputStream(file)) {
                 fos.write(log.getBytes());
             } catch (IOException e) {
                 error("unable to write error log: ", e.getMessage());
             }
-            file = new File(outDir + "/" + identifier + OPENCL_SOURCE_SUFFIX);
+            file = new File(STR."\{outDir}/\{identifier}\{OPENCL_SOURCE_SUFFIX}");
             try (FileOutputStream fos = new FileOutputStream(file)) {
                 fos.write(source);
             } catch (IOException e) {
@@ -635,13 +636,13 @@ public class OCLCodeCache {
             if (meta.shouldPrintCompileTimes()) {
                 debug("compile: kernel %s opencl %.9f\n", entryPoint, (t1 - t0) * 1e-9f);
             }
-            cache.put(id + "-" + entryPoint, code);
+            cache.put(STR."\{id}-\{entryPoint}", code);
 
             // BUG Apple does not seem to like implementing the OpenCL spec
-            // properly, this causes a sigfault.
+            // properly, this causes a SIGFAULT.
             if ((OPENCL_CACHE_ENABLE || OPENCL_DUMP_BINS) && !deviceContext.getPlatformContext().getPlatform().getVendor().equalsIgnoreCase("Apple")) {
                 final Path outDir = resolveCacheDirectory();
-                program.dumpBinaries(outDir.toAbsolutePath() + "/" + entryPoint);
+                program.dumpBinaries(STR."\{outDir.toAbsolutePath()}/\{entryPoint}");
             }
         } else {
             warn("\tunable to compile %s", entryPoint);
@@ -674,11 +675,11 @@ public class OCLCodeCache {
             long afterLoad = (TornadoOptions.TIME_IN_NANOSECONDS) ? System.nanoTime() : System.currentTimeMillis();
 
             if (PRINT_LOAD_TIME) {
-                System.out.println("Binary load time: " + (afterLoad - beforeLoad) + (TornadoOptions.TIME_IN_NANOSECONDS ? " ns" : " ms") + " \n");
+                System.out.println(STR."Binary load time: \{afterLoad - beforeLoad}\{TornadoOptions.TIME_IN_NANOSECONDS ? " ns" : " ms"} \n");
             }
 
             if (program == null) {
-                throw new OCLException("unable to load binary for " + entryPoint);
+                throw new OCLException(STR."unable to load binary for \{entryPoint}");
             }
 
             program.build("");

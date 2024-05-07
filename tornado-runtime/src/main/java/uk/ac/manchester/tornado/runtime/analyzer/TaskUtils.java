@@ -14,15 +14,13 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Authors: James Clarkson
  *
  */
 package uk.ac.manchester.tornado.runtime.analyzer;
@@ -40,8 +38,7 @@ import org.graalvm.compiler.bytecode.Bytecodes;
 import jdk.vm.ci.meta.ConstantPool;
 import jdk.vm.ci.meta.JavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
-import uk.ac.manchester.tornado.api.common.Access;
-import uk.ac.manchester.tornado.api.common.TornadoDevice;
+import uk.ac.manchester.tornado.api.common.PrebuiltTaskPackage;
 import uk.ac.manchester.tornado.api.common.TornadoFunctions;
 import uk.ac.manchester.tornado.api.common.TornadoFunctions.Task;
 import uk.ac.manchester.tornado.api.common.TornadoFunctions.Task1;
@@ -140,7 +137,7 @@ public class TaskUtils {
      * method with the actual code to be compiled.
      *
      * @param task
-     *            Input Tornado task that corresponds to the user code.
+     *     Input Tornado task that corresponds to the user code.
      */
     public static Method resolveMethodHandle(Object task) {
         final Class<?> type = task.getClass();
@@ -180,9 +177,13 @@ public class TaskUtils {
                 cp.loadReferencedType(bc[i + 2], Bytecodes.INVOKEVIRTUAL);
                 JavaMethod jm = cp.lookupMethod(bc[i + 2], Bytecodes.INVOKEVIRTUAL);
                 switch (jm.getName()) {
+                    case "booleanValue":
+                    case "byteValue":
+                    case "charValue":
+                    case "shortValue":
+                    case "intValue":
                     case "floatValue":
                     case "doubleValue":
-                    case "intValue":
                     case "longValue":
                         continue;
                 }
@@ -198,7 +199,7 @@ public class TaskUtils {
         return null;
     }
 
-    public static <T1> CompilableTask createTask(Method method, ScheduleMetaData meta, String id, Task code) {
+    public static CompilableTask createTask(Method method, ScheduleMetaData meta, String id, Task code) {
         return createTask(meta, id, method, code, true);
     }
 
@@ -301,22 +302,29 @@ public class TaskUtils {
         return cvs;
     }
 
-    public static PrebuiltTask createTask(ScheduleMetaData meta, String id, String entryPoint, String filename, Object[] args, Access[] accesses, TornadoDevice device, int[] dims) {
+    private static DomainTree buildDomainTree(int[] dims) {
         final DomainTree domain = new DomainTree(dims.length);
         for (int i = 0; i < dims.length; i++) {
             domain.set(i, new IntDomain(0, 1, dims[i]));
         }
+        return domain;
 
-        return new PrebuiltTask(meta, id, entryPoint, filename, args, accesses, device, domain);
     }
 
-    public static PrebuiltTask createTask(ScheduleMetaData meta, String id, String entryPoint, String filename, Object[] args, Access[] accesses, TornadoDevice device, int[] dims, int[] atomics) {
-        final DomainTree domain = new DomainTree(dims.length);
-        for (int i = 0; i < dims.length; i++) {
-            domain.set(i, new IntDomain(0, 1, dims[i]));
+    public static PrebuiltTask createTask(ScheduleMetaData meta, PrebuiltTaskPackage taskPackage) {
+        DomainTree domain = buildDomainTree(taskPackage.getDimensions());
+        PrebuiltTask prebuiltTask = new PrebuiltTask(meta, //
+                taskPackage.getId(), //
+                taskPackage.getEntryPoint(), //
+                taskPackage.getFilename(), //
+                taskPackage.getArgs(),  //
+                taskPackage.getAccesses(), //
+                taskPackage.getDevice(), //
+                domain);
+        if (taskPackage.getAtomics() != null) {
+            prebuiltTask.withAtomics(taskPackage.getAtomics());
         }
-
-        return new PrebuiltTask(meta, id, entryPoint, filename, args, accesses, device, domain, atomics);
+        return prebuiltTask;
     }
 
     private static CompilableTask createTask(ScheduleMetaData meta, String id, Method method, Object code, boolean extractCVs, Object... args) {

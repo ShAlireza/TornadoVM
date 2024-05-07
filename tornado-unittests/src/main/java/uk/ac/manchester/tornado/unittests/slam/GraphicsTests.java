@@ -73,7 +73,7 @@ import uk.ac.manchester.tornado.unittests.slam.utils.Renderer;
  * How to run?
  * </p>
  * <code>
- * tornado-test -V uk.ac.manchester.tornado.unittests.GraphicsTests
+ * tornado-test -V uk.ac.manchester.tornado.unittests.slam.GraphicsTests
  * </code>
  */
 public class GraphicsTests extends TornadoTestBase {
@@ -1294,12 +1294,14 @@ public class GraphicsTests extends TornadoTestBase {
 
     private Float8 createFloat8() {
         Random r = new Random();
-        return new Float8(random(r), random(r), random(r), random(r), random(r), random(r), random(r), random(r));
+        Float8 float8 = new Float8(random(r), random(r), random(r), random(r), random(r), random(r), random(r), random(r));
+        return float8;
     }
 
     private Float4 createFloat4() {
         Random r = new Random();
-        return new Float4(random(r), random(r), random(r), random(r));
+        Float4 float4 = new Float4(random(r), random(r), random(r), random(r));
+        return float4;
     }
 
     @Test

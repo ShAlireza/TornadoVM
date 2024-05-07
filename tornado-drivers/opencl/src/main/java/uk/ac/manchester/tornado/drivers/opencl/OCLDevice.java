@@ -14,7 +14,7 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -41,6 +41,9 @@ import uk.ac.manchester.tornado.runtime.common.RuntimeUtilities;
 
 public class OCLDevice implements OCLTargetDevice {
 
+    private static final int INIT_VALUE = -1;
+    private static final int MAX_BUFFER_SIZE = 8192;
+
     private final long id;
     private final int index;
 
@@ -58,12 +61,10 @@ public class OCLDevice implements OCLTargetDevice {
     private long maxConstantBufferSize;
     private long doubleFPConfig;
     private long singleFPConfig;
-    private int deviceMemoryBaseAligment;
+    private int deviceMemoryBaseAlignment;
     private String version;
     private OCLDeviceType deviceType;
 
-    private static final int INIT_VALUE = -1;
-    private static final int MAX_BUFFER_SIZE = 8192;
     private String deviceVendorName;
     private String driverVersion;
     private String deviceVersion;
@@ -95,7 +96,7 @@ public class OCLDevice implements OCLTargetDevice {
         this.maxConstantBufferSize = INIT_VALUE;
         this.doubleFPConfig = INIT_VALUE;
         this.singleFPConfig = INIT_VALUE;
-        this.deviceMemoryBaseAligment = INIT_VALUE;
+        this.deviceMemoryBaseAlignment = INIT_VALUE;
         this.maxWorkItemSizes = null;
         this.name = null;
         this.version = null;
@@ -167,17 +168,17 @@ public class OCLDevice implements OCLTargetDevice {
     }
 
     public int getDeviceMemoryBaseAlignment() {
-        if (deviceMemoryBaseAligment != INIT_VALUE) {
-            return deviceMemoryBaseAligment;
+        if (deviceMemoryBaseAlignment != INIT_VALUE) {
+            return deviceMemoryBaseAlignment;
         }
         queryOpenCLAPI(OCLDeviceInfo.CL_DEVICE_MEM_BASE_ADDR_ALIGN.getValue());
-        deviceMemoryBaseAligment = buffer.getInt();
-        return deviceMemoryBaseAligment;
+        deviceMemoryBaseAlignment = buffer.getInt();
+        return deviceMemoryBaseAlignment;
     }
 
     public boolean isDeviceAvailable() {
         queryOpenCLAPI(OCLDeviceInfo.CL_DEVICE_AVAILABLE.getValue());
-        return buffer.getInt() == 1;
+        return (buffer.get() == 1);
     }
 
     @Override
@@ -421,7 +422,7 @@ public class OCLDevice implements OCLTargetDevice {
             return deviceEndianLittle == CL_TRUE;
         }
         getDeviceEndianLittle();
-        return deviceEndianLittle == CL_TRUE;
+        return (deviceEndianLittle == CL_TRUE);
     }
 
     @Override
@@ -432,6 +433,11 @@ public class OCLDevice implements OCLTargetDevice {
     @Override
     public void setDeviceContext(OCLDeviceContextInterface deviceContext) {
         this.deviceContext = deviceContext;
+    }
+
+    @Override
+    public int deviceVersion() {
+        return Integer.parseInt(getVersion().split(" ")[1].replace(".", "")) * 10;
     }
 
     public int getWordSize() {
@@ -471,8 +477,8 @@ public class OCLDevice implements OCLTargetDevice {
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("id=0x%x, deviceName=%s, type=%s, available=%s\n", id, getDeviceName(), getDeviceType().toString(), isDeviceAvailable()));
         sb.append(String.format("Freq=%s, max compute units=%d\n", humanReadableFreq(getDeviceMaxClockFrequency()), getDeviceMaxComputeUnits()));
-        sb.append(String.format("Global mem. size=%s, local mem. size=%s\n", RuntimeUtilities.humanReadableByteCount(getDeviceGlobalMemorySize(), false),
-                humanReadableByteCount(getDeviceLocalMemorySize(), false)));
+        sb.append(String.format("Global mem. size=%s, local mem. size=%s\n", RuntimeUtilities.humanReadableByteCount(getDeviceGlobalMemorySize(), false), humanReadableByteCount(
+                getDeviceLocalMemorySize(), false)));
         sb.append(String.format("Extensions:\n"));
         for (String extension : getDeviceExtensions().split(" ")) {
             sb.append("\t" + extension + "\n");

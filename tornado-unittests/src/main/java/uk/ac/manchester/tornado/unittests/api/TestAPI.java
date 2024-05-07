@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, 2022 APT Group, Department of Computer Science,
+ * Copyright (c) 2013-2020, 2022, 2024, APT Group, Department of Computer Science,
  * The University of Manchester.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,15 +28,18 @@ import java.util.stream.IntStream;
 
 import org.junit.Test;
 
+import uk.ac.manchester.tornado.api.DataRange;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.TornadoExecutionResult;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
+import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.CharArray;
 import uk.ac.manchester.tornado.api.types.arrays.DoubleArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 import uk.ac.manchester.tornado.api.types.arrays.LongArray;
 import uk.ac.manchester.tornado.api.types.arrays.ShortArray;
@@ -188,20 +191,42 @@ public class TestAPI extends TornadoTestBase {
         }
     }
 
+    /**
+     * Perform the copy out under demand. It performs a copy from the device to the host of the entire array via the execution result.
+     */
+    @Test
+    public void testSegmentsHalfFloats() {
+        HalfFloatArray dataA = HalfFloatArray.fromElements(new HalfFloat(0), new HalfFloat(1), new HalfFloat(2), new HalfFloat(3));
+        HalfFloatArray dataB = HalfFloatArray.fromArray(new HalfFloat[] { new HalfFloat(0), new HalfFloat(1), new HalfFloat(2), new HalfFloat(3) });
+
+        for (int i = 0; i < dataA.getSize(); i++) {
+            assertEquals(dataA.get(i).getFloat32(), dataB.get(i).getFloat32(), 0.01f);
+        }
+        HalfFloat[] fArray = dataA.toHeapArray();
+        for (int i = 0; i < dataA.getSize(); i++) {
+            assertEquals(fArray[i].getFloat32(), dataA.get(i).getFloat32(), 0.01f);
+        }
+
+        HalfFloat[] fArrayB = dataB.toHeapArray();
+        for (int i = 0; i < dataA.getSize(); i++) {
+            assertEquals(fArrayB[i].getFloat32(), dataB.get(i).getFloat32(), 0.01f);
+        }
+    }
+
     @Test
     public void testLazyCopyOut() {
         final int N = 1024;
         int size = 20;
         IntArray data = new IntArray(N);
 
-        IntStream.range(0, N).parallel().forEach(idx -> data.set(idx, size));
+        data.init(size);
 
         TaskGraph taskGraph = new TaskGraph("s0");
         assertNotNull(taskGraph);
 
         taskGraph.transferToDevice(DataTransferMode.FIRST_EXECUTION, data) //
                 .task("t0", TestArrays::addAccumulator, data, 1) //
-                .transferToHost(DataTransferMode.USER_DEFINED, data);
+                .transferToHost(DataTransferMode.UNDER_DEMAND, data);
 
         ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
         TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
@@ -219,6 +244,10 @@ public class TestAPI extends TornadoTestBase {
         }
     }
 
+    /**
+     * Perform the copy out under demand. It performs a copy from the device to the host of the entire array via the execution result.
+     * In this test, input and output use the same array.
+     */
     @Test
     public void testLazyCopyOut2() {
         final int N = 128;
@@ -233,7 +262,7 @@ public class TestAPI extends TornadoTestBase {
 
         taskGraph.transferToDevice(DataTransferMode.FIRST_EXECUTION, data);
         taskGraph.task("t0", TestArrays::addAccumulator, data, 1);
-        taskGraph.transferToHost(DataTransferMode.USER_DEFINED, data);
+        taskGraph.transferToHost(DataTransferMode.UNDER_DEMAND, data);
 
         ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
         TornadoExecutionPlan executionPlanPlan = new TornadoExecutionPlan(immutableTaskGraph);
@@ -243,6 +272,43 @@ public class TestAPI extends TornadoTestBase {
         executionResult.transferToHost(data);
 
         executionPlanPlan.freeDeviceMemory();
+
+        for (int i = 0; i < N; i++) {
+            assertEquals(21, data.get(i));
+        }
+    }
+
+    /**
+     * Perform the copy out under demand. It performs a copy of a subset of the output array.
+     */
+    @Test
+    public void testLazyPartialCopyOut() {
+        final int N = 1024;
+        int size = 20;
+        IntArray data = new IntArray(N);
+
+        IntStream.range(0, N).parallel().forEach(idx -> data.set(idx, size));
+
+        TaskGraph taskGraph = new TaskGraph("s0");
+        assertNotNull(taskGraph);
+
+        taskGraph.transferToDevice(DataTransferMode.FIRST_EXECUTION, data) //
+                .task("t0", TestArrays::addAccumulator, data, 1) //
+                .transferToHost(DataTransferMode.UNDER_DEMAND, data);
+
+        ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
+        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
+        TornadoExecutionResult executionResult = executionPlan.execute();
+
+        DataRange dataRange = new DataRange(data);
+
+        executionResult.transferToHost(dataRange.withSize(N / 2));
+
+        executionResult.transferToHost(dataRange.withOffset(N / 2).withSize(N / 2));
+
+        // Mark all device memory buffers as free, thus the TornadoVM runtime can reuse
+        // device buffers for other execution plans.
+        executionPlan.freeDeviceMemory();
 
         for (int i = 0; i < N; i++) {
             assertEquals(21, data.get(i));
@@ -414,5 +480,26 @@ public class TestAPI extends TornadoTestBase {
             assertEquals((char) 10 + i, charArray.get(i));
         }
     }
+
+    @Test
+    public void testBuildWithSegmentsHalfFloat() {
+
+        final int n = 10;
+        // Allocate 10 elements
+        MemorySegment m = Arena.ofAuto().allocate(ValueLayout.JAVA_SHORT.byteSize() * n);
+
+        // Set 10 elements
+        for (int i = 0; i < n; i++) {
+            m.setAtIndex(ValueLayout.JAVA_SHORT, i, Float.floatToFloat16(10 + i));
+        }
+
+        // Factory method to build a float array from a segment
+        HalfFloatArray halfFloatArray = HalfFloatArray.fromSegment(m);
+
+        for (int i = 0; i < n; i++) {
+            assertEquals(10 + i, halfFloatArray.get(i).getFloat32(), 0.001f);
+        }
+    }
+
     // CHECKSTYLE:ON
 }

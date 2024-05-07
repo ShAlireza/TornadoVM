@@ -12,7 +12,7 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -35,26 +35,30 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 
-import uk.ac.manchester.tornado.drivers.common.EventDescriptor;
+import uk.ac.manchester.tornado.drivers.common.utils.EventDescriptor;
 
 /**
- * Class which holds mapping between OpenCL events and TornadoVM local events
- * and handles event registration and serialization. Also contains extra
- * information such as events description and tag.
- * 
+ * Class which holds mapping between OpenCL events and TornadoVM runtime events,
+ * and handles event registration and serialization. It also keeps metadata such
+ * as events description and tag.
+ *
+ * <p>
  * Each device holds an event pool. Only one instance of the pool per device.
+ * </p>
+ *
+ * <p>
+ * Relationship: one instance of the {@link OCLEventPool} per {@link OCLDeviceContext}.
+ * </p>
  */
 class OCLEventPool {
 
+    protected final long[] waitEventsBuffer;
     private final long[] events;
     private final EventDescriptor[] descriptors;
     private final BitSet retain;
     private final OCLCommandQueue[] eventQueues;
-    private int eventIndex;
-
     private final OCLEvent internalEvent;
-    protected final long[] waitEventsBuffer;
-
+    private int eventIndex;
     private int eventPoolSize;
 
     protected OCLEventPool(int poolSize) {

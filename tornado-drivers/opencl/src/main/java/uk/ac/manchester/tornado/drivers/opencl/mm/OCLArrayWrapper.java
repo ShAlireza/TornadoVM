@@ -12,7 +12,7 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -20,7 +20,7 @@
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
  *
- * Authors: James Clarkson, Juan Fumero
+ * , Juan Fumero
  *
  */
 package uk.ac.manchester.tornado.drivers.opencl.mm;
@@ -40,11 +40,11 @@ import jdk.vm.ci.meta.JavaKind;
 import uk.ac.manchester.tornado.api.exceptions.TornadoInternalError;
 import uk.ac.manchester.tornado.api.exceptions.TornadoMemoryException;
 import uk.ac.manchester.tornado.api.exceptions.TornadoRuntimeException;
-import uk.ac.manchester.tornado.api.memory.ObjectBuffer;
+import uk.ac.manchester.tornado.api.memory.XPUBuffer;
 import uk.ac.manchester.tornado.drivers.opencl.OCLDeviceContext;
 import uk.ac.manchester.tornado.runtime.common.Tornado;
 
-public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
+public abstract class OCLArrayWrapper<T> implements XPUBuffer {
 
     private static final int INIT_VALUE = -1;
     protected final OCLDeviceContext deviceContext;
@@ -101,7 +101,7 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
             throw new TornadoMemoryException("[ERROR] Bytes Allocated <= 0: " + bufferSize);
         }
 
-        this.bufferId = deviceContext.getBufferProvider().getBufferWithSize(bufferSize);
+        this.bufferId = deviceContext.getBufferProvider().getOrAllocateBufferWithSize(bufferSize);
 
         if (Tornado.FULL_DEBUG) {
             info("allocated: array kind=%s, size=%s, length offset=%d, header size=%d", kind.getJavaName(), humanReadableByteCount(bufferSize, true), arrayLengthOffset, arrayHeaderSize);
@@ -114,7 +114,7 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
     public void deallocate() {
         TornadoInternalError.guarantee(bufferId != INIT_VALUE, "Fatal error: trying to deallocate an invalid buffer");
 
-        deviceContext.getBufferProvider().markBufferReleased(bufferId, bufferSize);
+        deviceContext.getBufferProvider().markBufferReleased(bufferId);
         bufferId = INIT_VALUE;
         bufferSize = INIT_VALUE;
 
@@ -152,14 +152,14 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
     }
 
     @Override
-    public int enqueueRead(final Object value, long hostOffset, final int[] events, boolean useDeps) {
+    public int enqueueRead(long executionPlanId, final Object value, long hostOffset, final int[] events, boolean useDeps) {
         final T array = cast(value);
         if (array == null) {
             throw new TornadoRuntimeException("[ERROR] output data is NULL");
         }
         final int returnEvent;
         // FIXME: <REFACTOR>
-        returnEvent = enqueueReadArrayData(toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
+        returnEvent = enqueueReadArrayData(executionPlanId, toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
         return useDeps ? returnEvent : -1;
     }
 
@@ -167,21 +167,21 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
      * Copy data from the device to the main host.
      *
      * @param bufferId
-     *            Device Buffer ID
+     *     Device Buffer ID
      * @param offset
-     *            Offset within the device buffer
+     *     Offset within the device buffer
      * @param bytes
-     *            Bytes to be copied back to the host
+     *     Bytes to be copied back to the host
      * @param value
-     *            Host array that resides the final data
+     *     Host array that resides the final data
      * @param waitEvents
-     *            List of events to wait for.
+     *     List of events to wait for.
      * @return Event information
      */
-    protected abstract int enqueueReadArrayData(long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
+    protected abstract int enqueueReadArrayData(long executionPlanId, long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
 
     @Override
-    public List<Integer> enqueueWrite(final Object value, long batchSize, long hostOffset, final int[] events, boolean useDeps) {
+    public List<Integer> enqueueWrite(long executionPlanId, final Object value, long batchSize, long hostOffset, final int[] events, boolean useDeps) {
         final T array = cast(value);
         if (array == null) {
             throw new TornadoRuntimeException("ERROR] Data to be copied is NULL");
@@ -191,11 +191,11 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
         // We first write the header for the object, and then we write actual buffer
         final int headerEvent;
         if (batchSize <= 0) {
-            headerEvent = buildArrayHeader(Array.getLength(array)).enqueueWrite((useDeps) ? events : null);
+            headerEvent = buildArrayHeader(Array.getLength(array)).enqueueWrite(executionPlanId, (useDeps) ? events : null);
         } else {
-            headerEvent = buildArrayHeaderBatch(batchSize).enqueueWrite((useDeps) ? events : null);
+            headerEvent = buildArrayHeaderBatch(batchSize).enqueueWrite(executionPlanId, (useDeps) ? events : null);
         }
-        final int returnEvent = enqueueWriteArrayData(toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
+        final int returnEvent = enqueueWriteArrayData(executionPlanId, toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
 
         listEvents.add(headerEvent);
         listEvents.add(returnEvent);
@@ -206,19 +206,19 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
      * Copy data that resides in the host to the target device.
      *
      * @param bufferId
-     *            Device Buffer ID
+     *     Device Buffer ID
      * @param offset
-     *            Offset within the device buffer
+     *     Offset within the device buffer
      * @param bytes
-     *            Bytes to be copied
+     *     Bytes to be copied
      * @param value
-     *            Host array to be copied
+     *     Host array to be copied
      *
      * @param waitEvents
-     *            List of events to wait for.
+     *     List of events to wait for.
      * @return Event information
      */
-    protected abstract int enqueueWriteArrayData(long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
+    protected abstract int enqueueWriteArrayData(long executionPlanId, long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
 
     private OCLByteBuffer getArrayHeader() {
         final OCLByteBuffer header = new OCLByteBuffer(deviceContext, bufferId, bufferOffset, arrayHeaderSize);
@@ -237,46 +237,46 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
     }
 
     @Override
-    public void read(final Object value) {
+    public void read(long executionPlanId, final Object value) {
         // TODO: reading with offset != 0
-        read(value, 0, null, false);
+        read(executionPlanId, value, 0, 0, null, false);
     }
 
     /**
      * Read an buffer from the target device to the host.
      *
      * @param value
-     *            in which the data are copied
+     *     in which the data are copied
      * @param hostOffset
-     *            offset, in bytes, from the input value in which to perform the
-     *            read.
+     *     offset, in bytes, from the input value in which to perform the
+     *     read.
      * @param events
-     *            list of pending events.
+     *     list of pending events.
      * @param useDeps
-     *            flag to indicate dependencies should be carried for the next
-     *            operation.
+     *     flag to indicate dependencies should be carried for the next
+     *     operation.
      */
     @Override
-    public int read(final Object value, long hostOffset, int[] events, boolean useDeps) {
+    public int read(long executionPlanId, final Object value, long hostOffset, long partialReadSize, int[] events, boolean useDeps) {
         final T array = cast(value);
         if (array == null) {
             throw new TornadoRuntimeException("[ERROR] output data is NULL");
         }
 
         if (VALIDATE_ARRAY_HEADERS) {
-            if (validateArrayHeader(array)) {
-                return readArrayData(toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
+            if (validateArrayHeader(executionPlanId, array)) {
+                return readArrayData(executionPlanId, toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, hostOffset, (useDeps) ? events : null);
             } else {
                 shouldNotReachHere("Array header is invalid");
             }
         } else {
             final long numBytes = getSizeSubRegionSize() > 0 ? getSizeSubRegionSize() : (bufferSize - arrayHeaderSize);
-            return readArrayData(toBuffer(), arrayHeaderSize + bufferOffset, numBytes, array, hostOffset, (useDeps) ? events : null);
+            return readArrayData(executionPlanId, toBuffer(), arrayHeaderSize + bufferOffset, numBytes, array, hostOffset, (useDeps) ? events : null);
         }
         return -1;
     }
 
-    protected abstract int readArrayData(long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
+    protected abstract int readArrayData(long executionPlanId, long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
 
     public long sizeOf(final T array) {
         return arrayHeaderSize + ((long) Array.getLength(array) * (long) kind.getByteCount());
@@ -292,7 +292,7 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
     }
 
     @Override
-    public void setBuffer(ObjectBufferWrapper bufferWrapper) {
+    public void setBuffer(XPUBufferWrapper bufferWrapper) {
         this.bufferId = bufferWrapper.buffer;
         this.bufferOffset = bufferWrapper.bufferOffset;
 
@@ -313,9 +313,9 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
      * Retrieves a buffer that will contain the contents of the array header. This
      * also re-sizes the buffer.
      */
-    private boolean validateArrayHeader(final T array) {
+    private boolean validateArrayHeader(long executionPlanId, final T array) {
         final OCLByteBuffer header = prepareArrayHeader();
-        header.read();
+        header.read(executionPlanId);
         final int numElements = header.getInt(arrayLengthOffset);
         final boolean valid = numElements == Array.getLength(array);
         if (!valid) {
@@ -326,17 +326,17 @@ public abstract class OCLArrayWrapper<T> implements ObjectBuffer {
     }
 
     @Override
-    public void write(final Object value) {
+    public void write(long executionPlanId, final Object value) {
         final T array = cast(value);
         if (array == null) {
             throw new TornadoRuntimeException("[ERROR] data is NULL");
         }
-        buildArrayHeader(Array.getLength(array)).write();
+        buildArrayHeader(Array.getLength(array)).write(executionPlanId);
         // TODO: Writing with offset != 0
-        writeArrayData(toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, 0, null);
+        writeArrayData(executionPlanId, toBuffer(), arrayHeaderSize + bufferOffset, bufferSize - arrayHeaderSize, array, 0, null);
     }
 
-    protected abstract void writeArrayData(long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
+    protected abstract void writeArrayData(long executionPlanId, long bufferId, long offset, long bytes, T value, long hostOffset, int[] waitEvents);
 
     @Override
     public long getSizeSubRegionSize() {

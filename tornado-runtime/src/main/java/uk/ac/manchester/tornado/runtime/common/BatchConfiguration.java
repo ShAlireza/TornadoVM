@@ -2,7 +2,7 @@
  * This file is part of Tornado: A heterogeneous programming framework:
  * https://github.com/beehive-lab/tornadovm
  *
- * Copyright (c) 2023, APT Group, Department of Computer Science,
+ * Copyright (c) 2023-2024, APT Group, Department of Computer Science,
  * The University of Manchester. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -24,10 +24,10 @@
 package uk.ac.manchester.tornado.runtime.common;
 
 import java.lang.reflect.Array;
-import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
+import java.util.LinkedHashSet;
 
+import uk.ac.manchester.tornado.api.exceptions.TornadoRuntimeException;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.CharArray;
 import uk.ac.manchester.tornado.api.types.arrays.DoubleArray;
@@ -35,13 +35,23 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 import uk.ac.manchester.tornado.api.types.arrays.LongArray;
 import uk.ac.manchester.tornado.api.types.arrays.ShortArray;
-import uk.ac.manchester.tornado.api.exceptions.TornadoRuntimeException;
+import uk.ac.manchester.tornado.api.types.arrays.TornadoNativeArray;
+import uk.ac.manchester.tornado.runtime.common.enums.DataTypeSize;
 import uk.ac.manchester.tornado.runtime.graph.TornadoExecutionContext;
 
 /**
  * It presents the configuration for processing data in batches. This class
  * provides methods to compute chunk sizes based on the batch size and input
  * objects.
+ */
+/**
+ * How to test?
+ *
+ * <p>
+ * <code>
+ * tornado-test -V --fast uk.ac.manchester.tornado.unittests.batches.TestBatches
+ * </code>
+ * </p>
  */
 public class BatchConfiguration {
 
@@ -67,79 +77,59 @@ public class BatchConfiguration {
 
     public static BatchConfiguration computeChunkSizes(TornadoExecutionContext context, long batchSize) {
         // Get the size of the batch
-        List<Object> inputObjects = context.getObjects();
         long totalSize = 0;
-        DataTypeSize dataTypeSize = null;
 
-        HashSet<Class<?>> classObjects = new HashSet<>();
         HashSet<Long> inputSizes = new HashSet<>();
+        LinkedHashSet<Byte> elementSizes = new LinkedHashSet<>();
 
-        for (Object o : inputObjects) {
+        for (Object o : context.getObjects()) {
             if (o.getClass().isArray()) {
                 Class<?> componentType = o.getClass().getComponentType();
-                dataTypeSize = findDataTypeSize(componentType);
+                DataTypeSize dataTypeSize = DataTypeSize.findDataTypeSize(componentType);
                 if (dataTypeSize == null) {
                     throw new TornadoRuntimeException("[UNSUPPORTED] Data type not supported for processing in batches");
                 }
                 long size = Array.getLength(o);
                 totalSize = size * dataTypeSize.getSize();
 
-                classObjects.add(componentType);
+                elementSizes.add(dataTypeSize.getSize());
                 inputSizes.add(totalSize);
-                if (classObjects.size() > 1) {
-                    throw new TornadoRuntimeException("[UNSUPPORTED] Input objects with different data types not currently supported");
-                }
-                if (inputSizes.size() > 1) {
-                    throw new TornadoRuntimeException("[UNSUPPORTED] Input objects with different sizes not currently supported");
-                }
-            } else if (o instanceof IntArray) {
-                totalSize = ((IntArray) o).getNumBytesWithoutHeader();
+            } else if (o instanceof TornadoNativeArray tornadoNativeArray) {
+                totalSize = tornadoNativeArray.getNumBytesOfSegment();
                 inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(int.class);
-            } else if (o instanceof FloatArray) {
-                totalSize = ((FloatArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(float.class);
-            } else if (o instanceof DoubleArray) {
-                totalSize = ((DoubleArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(double.class);
-            } else if (o instanceof LongArray) {
-                totalSize = ((LongArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(long.class);
-            } else if (o instanceof ShortArray) {
-                totalSize = ((ShortArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(short.class);
-            } else if (o instanceof ByteArray) {
-                totalSize = ((ByteArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(byte.class);
-            } else if (o instanceof CharArray) {
-                totalSize = ((CharArray) o).getNumBytesWithoutHeader();
-                inputSizes.add(totalSize);
-                dataTypeSize = findDataTypeSize(char.class);
+                byte elementSize = switch (tornadoNativeArray) {
+                    case IntArray _ -> DataTypeSize.INT.getSize();
+                    case FloatArray _ -> DataTypeSize.FLOAT.getSize();
+                    case DoubleArray _ -> DataTypeSize.DOUBLE.getSize();
+                    case LongArray _ -> DataTypeSize.LONG.getSize();
+                    case ShortArray _ -> DataTypeSize.SHORT.getSize();
+                    case ByteArray _ -> DataTypeSize.BYTE.getSize();
+                    case CharArray _ -> DataTypeSize.CHAR.getSize();
+                    default -> throw new TornadoRuntimeException(STR."Unsupported array type: \{o.getClass()}");
+                };
+                elementSizes.add(elementSize);
             } else {
-                throw new TornadoRuntimeException("Unsupported type: ");
+                throw new TornadoRuntimeException(STR."Unsupported type: \{o.getClass()}");
             }
         }
 
-        assert dataTypeSize != null;
+        if (inputSizes.size() > 1) {
+            throw new TornadoRuntimeException("[UNSUPPORTED] Input objects with different sizes not currently supported");
+        }
+
+        if (elementSizes.size() > 1) {
+            throw new TornadoRuntimeException("[UNSUPPORTED] Input objects with different element sizes not currently supported");
+        }
 
         int totalChunks = (int) (totalSize / batchSize);
         int remainingChunkSize = (int) (totalSize % batchSize);
 
         if (Tornado.DEBUG) {
-            System.out.println("Batch Size: " + batchSize);
-            System.out.println("Total chunks: " + totalChunks);
-            System.out.println("remainingChunkSize: " + remainingChunkSize);
+            System.out.println(STR."Batch Size: \{batchSize}");
+            System.out.println(STR."Total chunks: \{totalChunks}");
+            System.out.println(STR."remainingChunkSize: \{remainingChunkSize}");
         }
-        return new BatchConfiguration(totalChunks, remainingChunkSize, dataTypeSize.getSize());
-    }
-
-    private static DataTypeSize findDataTypeSize(Class<?> dataType) {
-        return Arrays.stream(DataTypeSize.values()).filter(size -> size.getDataType().equals(dataType)).findFirst().orElse(null);
+        return new BatchConfiguration(totalChunks, remainingChunkSize, elementSizes.getFirst());
     }
 
     public int getTotalChunks() {
@@ -154,29 +144,4 @@ public class BatchConfiguration {
         return numBytesType;
     }
 
-    private enum DataTypeSize {
-        BYTE(byte.class, (byte) 1), //
-        CHAR(char.class, (byte) 2), //
-        SHORT(short.class, (byte) 2), //
-        INT(int.class, (byte) 4), //
-        FLOAT(float.class, (byte) 4), //
-        LONG(long.class, (byte) 8), //
-        DOUBLE(double.class, (byte) 8);
-
-        private final Class<?> dataType;
-        private final byte size;
-
-        DataTypeSize(Class<?> dataType, byte size) {
-            this.dataType = dataType;
-            this.size = size;
-        }
-
-        public Class<?> getDataType() {
-            return dataType;
-        }
-
-        public byte getSize() {
-            return size;
-        }
-    }
 }

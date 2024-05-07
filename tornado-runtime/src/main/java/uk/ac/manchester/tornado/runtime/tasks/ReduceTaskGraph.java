@@ -128,18 +128,13 @@ class ReduceTaskGraph {
      * @return Output array size
      */
     private static int obtainSizeArrayResult(int driverIndex, int device, int inputSize) {
-        TornadoDeviceType deviceType = TornadoCoreRuntime.getTornadoRuntime().getDriver(driverIndex).getDevice(device).getDeviceType();
-        TornadoDevice deviceToRun = TornadoCoreRuntime.getTornadoRuntime().getDriver(driverIndex).getDevice(device);
-        switch (deviceType) {
-            case CPU:
-                return deviceToRun.getAvailableProcessors() + 1;
-            case GPU:
-            case ACCELERATOR:
-                return inputSize > calculateAcceleratorGroupSize(deviceToRun, inputSize) ? (inputSize / calculateAcceleratorGroupSize(deviceToRun, inputSize)) + 1 : 2;
-            default:
-                break;
-        }
-        return 0;
+        TornadoDeviceType deviceType = TornadoCoreRuntime.getTornadoRuntime().getBackend(driverIndex).getDevice(device).getDeviceType();
+        TornadoDevice deviceToRun = TornadoCoreRuntime.getTornadoRuntime().getBackend(driverIndex).getDevice(device);
+        return switch (deviceType) {
+            case CPU -> deviceToRun.getAvailableProcessors() + 1;
+            case GPU, ACCELERATOR -> inputSize > calculateAcceleratorGroupSize(deviceToRun, inputSize) ? (inputSize / calculateAcceleratorGroupSize(deviceToRun, inputSize)) + 1 : 2;
+            default -> 0;
+        };
     }
 
     /**
@@ -177,7 +172,7 @@ class ReduceTaskGraph {
     }
 
     private static void inspectBinariesFPGA(String taskScheduleName, String graphName, String taskName, boolean sequential) {
-        String idTaskGraph = graphName + "." + taskName;
+        String idTaskGraph = STR."\{graphName}.\{taskName}";
         StringBuilder originalBinaries = TornadoOptions.FPGA_BINARIES;
         if (originalBinaries != null) {
             String[] binaries = originalBinaries.toString().split(",");
@@ -194,13 +189,13 @@ class ReduceTaskGraph {
             for (int i = 0; i < binaries.length; i += 2) {
                 String givenTaskName = binaries[i + 1].split(".device")[0];
                 if (givenTaskName.equals(idTaskGraph)) {
-                    int[] info = MetaDataUtils.resolveDriverDeviceIndexes(MetaDataUtils.getProperty(idTaskGraph + ".device"));
+                    int[] info = MetaDataUtils.resolveDriverDeviceIndexes(MetaDataUtils.getProperty(STR."\{idTaskGraph}.device"));
                     int deviceNumber = info[1];
 
                     if (!sequential) {
-                        originalBinaries.append("," + binaries[i] + "," + taskScheduleName + "." + taskName + ".device=0:" + deviceNumber);
+                        originalBinaries.append(STR.",\{binaries[i]},\{taskScheduleName}.\{taskName}.device=0:\{deviceNumber}");
                     } else {
-                        originalBinaries.append("," + binaries[i] + "," + taskScheduleName + "." + SEQUENTIAL_TASK_REDUCE_NAME + counterSeqName + ".device=0:" + deviceNumber);
+                        originalBinaries.append(STR.",\{binaries[i]},\{taskScheduleName}.\{SEQUENTIAL_TASK_REDUCE_NAME}\{counterSeqName}.device=0:\{deviceNumber}");
                     }
                 }
             }
@@ -213,13 +208,13 @@ class ReduceTaskGraph {
     }
 
     private int[] changeDriverAndDeviceIfNeeded(String taskScheduleName, String graphName, String taskName) {
-        String idTaskGraph = graphName + "." + taskName;
-        boolean isDeviceDefined = MetaDataUtils.getProperty(idTaskGraph + ".device") != null;
+        String idTaskGraph = STR."\{graphName}.\{taskName}";
+        boolean isDeviceDefined = MetaDataUtils.getProperty(STR."\{idTaskGraph}.device") != null;
         if (isDeviceDefined) {
-            int[] info = MetaDataUtils.resolveDriverDeviceIndexes(MetaDataUtils.getProperty(idTaskGraph + ".device"));
+            int[] info = MetaDataUtils.resolveDriverDeviceIndexes(MetaDataUtils.getProperty(STR."\{idTaskGraph}.device"));
             int driverNumber = info[0];
             int deviceNumber = info[1];
-            TornadoRuntime.setProperty(taskScheduleName + "." + taskName + ".device", driverNumber + ":" + deviceNumber);
+            TornadoRuntime.setProperty(STR."\{taskScheduleName}.\{taskName}.device", STR."\{driverNumber}:\{deviceNumber}");
             return info;
         }
         return null;
@@ -298,7 +293,7 @@ class ReduceTaskGraph {
      */
     private boolean isTaskEligibleSplitHostAndDevice(final int targetDeviceToRun, final long elementsReductionLeftOver) {
         if (elementsReductionLeftOver > 0) {
-            TornadoDeviceType deviceType = TornadoCoreRuntime.getTornadoRuntime().getDriver(0).getDevice(targetDeviceToRun).getDeviceType();
+            TornadoDeviceType deviceType = TornadoCoreRuntime.getTornadoRuntime().getBackend(0).getDevice(targetDeviceToRun).getDeviceType();
             return (deviceType == TornadoDeviceType.GPU || deviceType == TornadoDeviceType.FPGA || deviceType == TornadoDeviceType.ACCELERATOR);
         }
         return false;
@@ -306,7 +301,7 @@ class ReduceTaskGraph {
 
     private void joinHostThreads() {
         if (threadSequentialExecution != null && !threadSequentialExecution.isEmpty()) {
-            threadSequentialExecution.stream().forEach(thread -> {
+            threadSequentialExecution.forEach(thread -> {
                 try {
                     thread.join();
                     hybridInitialized = false;
@@ -367,15 +362,15 @@ class ReduceTaskGraph {
     }
 
     private boolean isDeviceAnAccelerator(final int deviceToRun) {
-        TornadoDeviceType deviceType = TornadoRuntime.getTornadoRuntime().getDriver(0).getDevice(deviceToRun).getDeviceType();
+        TornadoDeviceType deviceType = TornadoRuntime.getTornadoRuntime().getBackend(0).getDevice(deviceToRun).getDeviceType();
         return (deviceType == TornadoDeviceType.ACCELERATOR);
     }
 
     private void updateGlobalAndLocalDimensionsFPGA(final int deviceToRun, String taskScheduleReduceName, TaskPackage taskPackage, int inputSize) {
         // Update GLOBAL and LOCAL workgroup size if device to run is the FPGA
         if (isAheadOfTime() && isDeviceAnAccelerator(deviceToRun)) {
-            TornadoRuntime.setProperty(taskScheduleReduceName + "." + taskPackage.getId() + TaskMetaData.GLOBAL_WORKGROUP_SUFFIX, Integer.toString(inputSize));
-            TornadoRuntime.setProperty(taskScheduleReduceName + "." + taskPackage.getId() + TaskMetaData.LOCAL_WORKGROUP_SUFFIX, "64");
+            TornadoRuntime.setProperty(STR."\{taskScheduleReduceName}.\{taskPackage.getId()}\{TaskMetaData.GLOBAL_WORKGROUP_SUFFIX}", Integer.toString(inputSize));
+            TornadoRuntime.setProperty(STR."\{taskScheduleReduceName}.\{taskPackage.getId()}\{TaskMetaData.LOCAL_WORKGROUP_SUFFIX}", "64");
         }
     }
 
@@ -573,8 +568,8 @@ class ReduceTaskGraph {
                     int sizeReduceArray = sizesReductionArray.get(i);
                     for (REDUCE_OPERATION operation : operations) {
                         final String newTaskSequentialName = SEQUENTIAL_TASK_REDUCE_NAME + counterSeqName.get();
-                        String fullName = rewrittenTaskGraph.getTaskGraphName() + "." + newTaskSequentialName;
-                        TornadoRuntime.setProperty(fullName + ".device", driverToRun + ":" + deviceToRun);
+                        String fullName = STR."\{rewrittenTaskGraph.getTaskGraphName()}.\{newTaskSequentialName}";
+                        TornadoRuntime.setProperty(STR."\{fullName}.device", driverToRun + ":" + deviceToRun);
                         inspectBinariesFPGA(taskScheduleReduceName, graphName, taskPackage.getId(), true);
 
                         switch (operation) {
@@ -619,8 +614,7 @@ class ReduceTaskGraph {
                     continue;
                 }
                 if (!rewrittenTaskGraph.getArgumentsLookup().contains(parameter)) {
-                    throw new TornadoTaskRuntimeException("Parameter #" + i + " <" + parameter + "> from task <" + task
-                            .getId() + "> not specified either in `transferToDevice` or `transferToHost` functions");
+                    throw new TornadoTaskRuntimeException(STR."Parameter #\{i} <\{parameter}> from task <\{task.getId()}> not specified either in `transferToDevice` or `transferToHost` functions");
                 }
             }
         }
@@ -637,6 +631,18 @@ class ReduceTaskGraph {
             executionPlan.withProfiler(originalTaskGraph.getProfilerMode());
         } else {
             executionPlan.withoutProfiler();
+        }
+
+        if (originalTaskGraph.meta().isPrintKernelEnabled()) {
+            executionPlan.withPrintKernel();
+        } else {
+            executionPlan.withoutPrintKernel();
+        }
+
+        if (originalTaskGraph.meta().isThreadInfoEnabled()) {
+            executionPlan.withThreadInfo();
+        } else {
+            executionPlan.withoutThreadInfo();
         }
 
         // check parameter list
@@ -730,7 +736,7 @@ class ReduceTaskGraph {
             case FloatArray panamaFloatArray -> ((FloatArray) originalReduceVariable).set(0, panamaFloatArray.get(0));
             case DoubleArray panamaDoubleArray -> ((DoubleArray) originalReduceVariable).set(0, panamaDoubleArray.get(0));
             case LongArray panamaLongArray -> ((LongArray) originalReduceVariable).set(0, panamaLongArray.get(0));
-            default -> new TornadoRuntimeException("[ERROR] Reduce data type not supported yet: " + newArray.getClass().getTypeName());
+            default -> new TornadoRuntimeException(STR."[ERROR] Reduce data type not supported yet: \{newArray.getClass().getTypeName()}");
         }
     }
 
@@ -776,7 +782,7 @@ class ReduceTaskGraph {
                 long bnl = panamaLongArray.get(0);
                 ((LongArray) originalReduceVariable).set(0, operateFinalReduction(anl, bnl, hybridMergeTable.get(panamaLongArray)));
             }
-            default -> new TornadoRuntimeException("[ERROR] Reduce data type not supported yet: " + newArray.getClass().getTypeName());
+            default -> new TornadoRuntimeException(STR."[ERROR] Reduce data type not supported yet: \{newArray.getClass().getTypeName()}");
         }
     }
 
@@ -865,8 +871,7 @@ class ReduceTaskGraph {
          */
         private void runBinaryCodeForReduction(TaskPackage taskPackage, InstalledCode code, Map<Object, Object> hostHybridVariables) {
             try {
-                // Execute the generated binary with Graal with
-                // the host loop-bound
+                // Execute the generated binary with Graal with the host loop-bound
 
                 // 1. Set arguments to the method-compiled code
                 int numArgs = taskPackage.getTaskParameters().length - 1;

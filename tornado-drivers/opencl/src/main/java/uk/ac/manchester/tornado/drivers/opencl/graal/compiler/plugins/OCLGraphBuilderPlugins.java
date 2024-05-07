@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, APT Group, Department of Computer Science,
+ * Copyright (c) 2022, 2024 APT Group, Department of Computer Science,
  * School of Engineering, The University of Manchester. All rights reserved.
  * Copyright (c) 2018, 2020, APT Group, Department of Computer Science,
  * The University of Manchester. All rights reserved.
@@ -19,8 +19,6 @@
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Authors: James Clarkson
  *
  */
 package uk.ac.manchester.tornado.drivers.opencl.graal.compiler.plugins;
@@ -113,10 +111,12 @@ public class OCLGraphBuilderPlugins {
         registerKernelContextPlugins(plugins);
 
         OCLMathPlugins.registerTornadoMathPlugins(plugins);
-        VectorPlugins.registerPlugins(ps, plugins);
+        OCLVectorPlugins.registerPlugins(ps, plugins);
 
         // Register TornadoAtomicInteger
         registerTornadoAtomicInteger(ps, plugins);
+
+        OCLHalfFloatPlugins.registerPlugins(ps, plugins);
 
         registerMemoryAccessPlugins(plugins);
 
@@ -683,6 +683,6 @@ public class OCLGraphBuilderPlugins {
     }
 
     public static void registerParameterPlugins(Plugins plugins) {
-        VectorPlugins.registerParameterPlugins(plugins);
+        OCLVectorPlugins.registerParameterPlugins(plugins);
     }
 }

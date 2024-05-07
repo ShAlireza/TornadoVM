@@ -1,53 +1,29 @@
 /*
- * This file is part of Tornado: A heterogeneous programming framework:
- * https://github.com/beehive-lab/tornadovm
+ * Copyright (c) 2013-2024, APT Group, Department of Computer Science,
+ * The University of Manchester.
  *
- * Copyright (c) 2013-2020, APT Group, Department of Computer Science,
- * The University of Manchester. All rights reserved.
- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * GNU Classpath is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * GNU Classpath is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with GNU Classpath; see the file COPYING. If not, write to the
- * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301 USA.
- *
- * Linking this library statically or dynamically with other modules is
- * making a combined work based on this library. Thus, the terms and
- * conditions of the GNU General Public License cover the whole
- * combination.
- *
- * As a special exception, the copyright holders of this library give you
- * permission to link this library with independent modules to produce an
- * executable, regardless of the license terms of these independent
- * modules, and to copy and distribute the resulting executable under
- * terms of your choice, provided that you also meet, for each linked
- * independent module, the terms and conditions of the license of that
- * module. An independent module is a module which is not derived from
- * or based on this library. If you modify this library, you may extend
- * this exception to your version of the library, but you are not
- * obligated to do so. If you do not wish to do so, delete this
- * exception statement from your version.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 package uk.ac.manchester.tornado.api.types.volumes;
 
+import java.lang.foreign.MemorySegment;
 import java.nio.ShortBuffer;
 
 import uk.ac.manchester.tornado.api.types.arrays.ShortArray;
-import uk.ac.manchester.tornado.api.types.common.PrimitiveStorage;
 import uk.ac.manchester.tornado.api.types.vectors.Short2;
 
-public class VolumeShort2 implements PrimitiveStorage<ShortBuffer> {
+public final class VolumeShort2 implements TornadoVolumesInterface<ShortBuffer> {
 
     public static final Class<VolumeShort2> TYPE = VolumeShort2.class;
 
@@ -55,19 +31,19 @@ public class VolumeShort2 implements PrimitiveStorage<ShortBuffer> {
     /**
      * backing array.
      */
-    protected final ShortArray storage;
+    private final ShortArray storage;
     /**
      * Size in Y dimension.
      */
-    protected final int Y;
+    private final int Y;
     /**
      * Size in X dimension.
      */
-    protected final int X;
+    private final int X;
     /**
      * Size in Y dimension.
      */
-    protected final int Z;
+    private final int Z;
     /**
      * number of elements in the storage.
      */
@@ -97,12 +73,12 @@ public class VolumeShort2 implements PrimitiveStorage<ShortBuffer> {
         return storage;
     }
 
-    private int toIndex(int x, int y, int z) {
+    private int getIndex(int x, int y, int z) {
         return (z * X * Y * ELEMENT_SIZE) + (y * ELEMENT_SIZE * X) + (x * ELEMENT_SIZE);
     }
 
     public Short2 get(int x, int y, int z) {
-        final int index = toIndex(x, y, z);
+        final int index = getIndex(x, y, z);
         return loadFromArray(storage, index);
     }
 
@@ -114,7 +90,7 @@ public class VolumeShort2 implements PrimitiveStorage<ShortBuffer> {
     }
 
     public void set(int x, int y, int z, Short2 value) {
-        final int index = toIndex(x, y, z);
+        final int index = getIndex(x, y, z);
         storeToArray(value, storage, index);
     }
 
@@ -189,4 +165,23 @@ public class VolumeShort2 implements PrimitiveStorage<ShortBuffer> {
         storage.clear();
     }
 
+    @Override
+    public long getNumBytes() {
+        return storage.getNumBytesOfSegment();
+    }
+
+    @Override
+    public long getNumBytesWithHeader() {
+        return storage.getNumBytesOfSegmentWithHeader();
+    }
+
+    @Override
+    public MemorySegment getSegment() {
+        return getArray().getSegment();
+    }
+
+    @Override
+    public MemorySegment getSegmentWithHeader() {
+        return getArray().getSegmentWithHeader();
+    }
 }

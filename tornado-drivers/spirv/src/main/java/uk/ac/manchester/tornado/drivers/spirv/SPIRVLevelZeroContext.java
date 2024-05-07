@@ -24,9 +24,9 @@
 package uk.ac.manchester.tornado.drivers.spirv;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import uk.ac.manchester.tornado.api.exceptions.TornadoInternalError;
 import uk.ac.manchester.tornado.drivers.spirv.levelzero.LevelZeroByteBuffer;
@@ -58,31 +58,26 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
 
     private static final String BUFFER_NOT_FOUND_ERROR_MESSAGE = "Should always have a buffer created at this point.";
 
-    private LevelZeroContext levelZeroContext;
-    private List<SPIRVDeviceContext> spirvDeviceContext;
-    private List<SPIRVLevelZeroCommandQueue> commandQueues;
+    private final LevelZeroContext levelZeroContext;
+    private final List<SPIRVDeviceContext> spirvDeviceContext;
+
     // Maps buffer ID -> LevelZeroByteBuffer
     private final Map<Long, LevelZeroByteBuffer> deviceBufferMap;
 
-    // This class should only receive 1 device, not a list of devices.
+    private final Map<Long, SPIRVCommandQueueTable> commmandQueueTable;
+
     public SPIRVLevelZeroContext(SPIRVPlatform platform, List<SPIRVDevice> devices, LevelZeroContext levelZeroContext) {
         super(platform, devices);
         this.levelZeroContext = levelZeroContext;
 
-        commandQueues = new ArrayList<>();
-        for (SPIRVDevice device : devices) {
-            LevelZeroCommandQueue commandQueue = createCommandQueue(levelZeroContext, device);
-            LevelZeroCommandList commandList = createCommandList(levelZeroContext, device);
-            commandQueues.add(new SPIRVLevelZeroCommandQueue(commandQueue, commandList, (LevelZeroDevice) device.getDevice()));
-        }
-
         spirvDeviceContext = new ArrayList<>();
-        deviceBufferMap = new HashMap<>();
+        deviceBufferMap = new ConcurrentHashMap<>();
+        commmandQueueTable = new ConcurrentHashMap<>();
 
-        // Create LevelZeroDeviceContext
-        for (int deviceIndex = 0; deviceIndex < devices.size(); deviceIndex++) {
-            SPIRVDeviceContext deviceContext = new SPIRVLevelZeroDeviceContext(devices.get(deviceIndex), commandQueues.get(deviceIndex), this);
-            devices.get(deviceIndex).setDeviceContext(deviceContext);
+        // Create LevelZeroDeviceContext per level-zero device
+        for (SPIRVDevice device : devices) {
+            SPIRVDeviceContext deviceContext = new SPIRVLevelZeroDeviceContext(device, this);
+            device.setDeviceContext(deviceContext);
             spirvDeviceContext.add(deviceContext);
         }
     }
@@ -93,7 +88,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         LevelZeroUtils.errorLog("zeDeviceGetCommandQueueGroupProperties", result);
 
         if (numQueueGroups[0] == 0) {
-            throw new RuntimeException("Number of Queue Groups is 0 for device: " + device.getDeviceProperties().getName());
+            throw new RuntimeException(STR."Number of Queue Groups is 0 for device: \{device.getDeviceProperties().getName()}");
         }
         int ordinal = numQueueGroups[0];
 
@@ -151,16 +146,14 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public SPIRVCommandQueue createCommandQueue(int deviceIndex) {
-        return getCommandQueueForDevice(deviceIndex);
-    }
-
-    @Override
-    public SPIRVCommandQueue getCommandQueueForDevice(int deviceIndex) {
-        if (deviceIndex < commandQueues.size()) {
-            return commandQueues.get(deviceIndex);
+    public SPIRVLevelZeroCommandQueue getCommandQueueForDevice(long executionPlanId, int deviceIndex) {
+        if (!commmandQueueTable.containsKey(executionPlanId)) {
+            SPIRVDevice device = devices.get(deviceIndex);
+            SPIRVCommandQueueTable spirvCommandQueueTable = new SPIRVCommandQueueTable();
+            spirvCommandQueueTable.get(device, levelZeroContext);
+            commmandQueueTable.put(executionPlanId, spirvCommandQueueTable);
         }
-        return null;
+        return commmandQueueTable.get(executionPlanId).get(devices.get(deviceIndex), levelZeroContext);
     }
 
     private ZeDeviceMemAllocDescriptor createDeviceDescription() {
@@ -236,12 +229,12 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
 
         int result = levelZeroContext.zeMemFree(levelZeroContext.getDefaultContextPtr(), deviceBuffer);
-        LevelZeroUtils.errorLog("zeMemAllocDevice", result);
+        LevelZeroUtils.errorLog("zeMemFree", result);
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, byte[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, byte[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -253,7 +246,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
         }
@@ -261,8 +254,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, char[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, char[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -274,7 +267,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
         }
@@ -282,8 +275,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, short[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, short[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -295,7 +288,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
         }
@@ -303,8 +296,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, int[] array, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, int[] array, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -316,7 +309,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), array, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -325,8 +318,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, float[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, float[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -338,7 +331,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -347,8 +340,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, double[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, double[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -360,7 +353,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -369,8 +362,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, long[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, long[] value, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -382,7 +375,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), value, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
         }
@@ -392,8 +385,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
 
     // FIXME: <TODO> Events are still pending
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, byte[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, byte[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -405,7 +398,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -414,8 +407,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, char[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, char[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -428,7 +421,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
 
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -437,8 +430,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, short[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, short[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -450,7 +443,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -471,8 +464,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, int[] array, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, int[] array, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -484,7 +477,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, array, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -494,8 +487,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, float[] array, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, float[] array, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -507,7 +500,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, array, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -517,8 +510,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, double[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, double[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -530,7 +523,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
@@ -539,30 +532,8 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, long[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
-        LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
-        LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
-        if (deviceBuffer == null) {
-            TornadoInternalError.shouldNotReachHere(BUFFER_NOT_FOUND_ERROR_MESSAGE);
-        }
-
-        if (profilerTransfer != null) {
-            registerTimeStamp(commandList, profilerTransfer.getStart(), profilerTransfer.getStop());
-        }
-
-        int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
-        LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
-        if (profilerTransfer != null) {
-            appendTimeStamp(profilerTransfer.getStop());
-        }
-        return 0;
-    }
-
-    @Override
-    public int enqueueWriteBuffer(int deviceIndex, long bufferId, long offset, long bytes, long value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, long[] value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -575,7 +546,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
 
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());
         }
@@ -583,16 +554,39 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public void enqueueBarrier(int deviceIndex) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public int enqueueWriteBuffer(long executionPlanId, int deviceIndex, long bufferId, long offset, long bytes, long value, long hostOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
+        LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
+        LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
+        if (deviceBuffer == null) {
+            TornadoInternalError.shouldNotReachHere(BUFFER_NOT_FOUND_ERROR_MESSAGE);
+        }
+
+        if (profilerTransfer != null) {
+            registerTimeStamp(commandList, profilerTransfer.getStart(), profilerTransfer.getStop());
+        }
+
+        int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), deviceBuffer, value, bytes, offset, hostOffset, null, 0, null);
+        LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
+        enqueueBarrier(executionPlanId, deviceIndex);
+
+        if (profilerTransfer != null) {
+            appendTimeStamp(profilerTransfer.getStop());
+        }
+        return 0;
+    }
+
+    @Override
+    public void enqueueBarrier(long executionPlanId, int deviceIndex) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         int result = commandList.zeCommandListAppendBarrier(commandList.getCommandListHandlerPtr(), null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendBarrier", result);
     }
 
     @Override
-    public void flush(int deviceIndex) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public void flush(long executionPlanId, int deviceIndex) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroCommandQueue commandQueue = spirvCommandQueue.getCommandQueue();
 
@@ -614,8 +608,9 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
     }
 
     @Override
-    public void readBuffer(int deviceIndex, long bufferId, long srcOffset, long bytes, long offHeapSegmentAddress, long dstOffset, int[] waitEvents, ProfilerTransfer profilerTransfer) {
-        SPIRVLevelZeroCommandQueue spirvCommandQueue = commandQueues.get(deviceIndex);
+    public void readBuffer(long executionPlanId, int deviceIndex, long bufferId, long srcOffset, long bytes, long offHeapSegmentAddress, long dstOffset, int[] waitEvents,
+            ProfilerTransfer profilerTransfer) {
+        SPIRVLevelZeroCommandQueue spirvCommandQueue = getCommandQueueForDevice(executionPlanId, deviceIndex);
         LevelZeroCommandList commandList = spirvCommandQueue.getCommandList();
         LevelZeroByteBuffer deviceBuffer = deviceBufferMap.get(bufferId);
         if (deviceBuffer == null) {
@@ -627,7 +622,7 @@ public class SPIRVLevelZeroContext extends SPIRVContext {
         }
         int result = commandList.zeCommandListAppendMemoryCopyWithOffset(commandList.getCommandListHandlerPtr(), offHeapSegmentAddress, deviceBuffer, bytes, dstOffset, srcOffset, null, 0, null);
         LevelZeroUtils.errorLog("zeCommandListAppendMemoryCopyWithOffset", result);
-        enqueueBarrier(deviceIndex);
+        enqueueBarrier(executionPlanId, deviceIndex);
 
         if (profilerTransfer != null) {
             appendTimeStamp(profilerTransfer.getStop());

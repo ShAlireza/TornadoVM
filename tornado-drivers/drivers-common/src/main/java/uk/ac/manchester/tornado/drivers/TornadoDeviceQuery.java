@@ -2,7 +2,7 @@
  * This file is part of Tornado: A heterogeneous programming framework:
  * https://github.com/beehive-lab/tornadovm
  *
- * Copyright (c) 2013-2020, APT Group, Department of Computer Science,
+ * Copyright (c) 2013-2020, 2024, APT Group, Department of Computer Science,
  * The University of Manchester. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -12,7 +12,7 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
@@ -27,8 +27,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 
 import uk.ac.manchester.tornado.api.enums.TornadoVMBackendType;
-import uk.ac.manchester.tornado.drivers.common.ColoursTerminal;
-import uk.ac.manchester.tornado.runtime.TornadoAcceleratorDriver;
+import uk.ac.manchester.tornado.drivers.common.utils.ColoursTerminal;
+import uk.ac.manchester.tornado.runtime.TornadoAcceleratorBackend;
 import uk.ac.manchester.tornado.runtime.TornadoCoreRuntime;
 import uk.ac.manchester.tornado.runtime.common.TornadoOptions;
 
@@ -45,14 +45,6 @@ import uk.ac.manchester.tornado.runtime.common.TornadoOptions;
  */
 public class TornadoDeviceQuery {
 
-    private static String formatSize(long v) {
-        if (v < 1024) {
-            return v + " B";
-        }
-        int z = (63 - Long.numberOfLeadingZeros(v)) / 10;
-        return String.format("%.1f %sB", (double) v / (1L << (z * 10)), " KMGTPE".charAt(z));
-    }
-
     private static HashMap<TornadoVMBackendType, String> colourMapping;
 
     static {
@@ -60,6 +52,14 @@ public class TornadoDeviceQuery {
         colourMapping.put(TornadoVMBackendType.OPENCL, ColoursTerminal.CYAN);
         colourMapping.put(TornadoVMBackendType.PTX, ColoursTerminal.GREEN);
         colourMapping.put(TornadoVMBackendType.SPIRV, ColoursTerminal.PURPLE);
+    }
+
+    private static String formatSize(long v) {
+        if (v < 1024) {
+            return v + " B";
+        }
+        int z = (63 - Long.numberOfLeadingZeros(v)) / 10;
+        return String.format("%.1f %sB", (double) v / (1L << (z * 10)), " KMGTPE".charAt(z));
     }
 
     public static void main(String[] args) {
@@ -71,11 +71,11 @@ public class TornadoDeviceQuery {
         }
 
         StringBuilder deviceInfoBuffer = new StringBuilder().append("\n");
-        final int numDrivers = TornadoCoreRuntime.getTornadoRuntime().getNumDrivers();
+        final int numDrivers = TornadoCoreRuntime.getTornadoRuntime().getNumBackends();
         deviceInfoBuffer.append("Number of Tornado drivers: " + numDrivers + "\n");
 
         for (int driverIndex = 0; driverIndex < numDrivers; driverIndex++) {
-            final TornadoAcceleratorDriver driver = TornadoCoreRuntime.getTornadoRuntime().getDriver(driverIndex);
+            final TornadoAcceleratorBackend driver = TornadoCoreRuntime.getTornadoRuntime().getBackend(driverIndex);
             TornadoVMBackendType backendType = TornadoCoreRuntime.getTornadoRuntime().getBackendType(driverIndex);
             String colour = colourMapping.get(backendType);
             final int numDevices = driver.getDeviceCount();

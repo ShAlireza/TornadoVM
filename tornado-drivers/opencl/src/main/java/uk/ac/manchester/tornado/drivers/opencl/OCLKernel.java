@@ -1,5 +1,5 @@
 /*
- * This file is part of Tornado: A heterogeneous programming framework: 
+ * This file is part of Tornado: A heterogeneous programming framework:
  * https://github.com/beehive-lab/tornadovm
  *
  * Copyright (c) 2013-2020, APT Group, Department of Computer Science,
@@ -12,15 +12,13 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Authors: James Clarkson
  *
  */
 package uk.ac.manchester.tornado.drivers.opencl;
@@ -35,7 +33,7 @@ import uk.ac.manchester.tornado.drivers.opencl.enums.OCLKernelInfo;
 import uk.ac.manchester.tornado.drivers.opencl.exceptions.OCLException;
 import uk.ac.manchester.tornado.runtime.common.TornadoLogger;
 
-public class OCLKernel extends TornadoLogger {
+public class OCLKernel {
 
     private final long oclKernelID;
     private final OCLDeviceContext deviceContext;
@@ -65,7 +63,7 @@ public class OCLKernel extends TornadoLogger {
         try {
             clSetKernelArg(oclKernelID, index, buffer.position(), buffer.array());
         } catch (OCLException e) {
-            error(e.getMessage());
+            TornadoLogger.error(e.getMessage());
         }
     }
 
@@ -74,7 +72,7 @@ public class OCLKernel extends TornadoLogger {
         try {
             clSetKernelArgRef(oclKernelID, index, devicePtr);
         } catch (OCLException e) {
-            error(e.getMessage());
+            TornadoLogger.error(e.getMessage());
         }
     }
 
@@ -82,7 +80,7 @@ public class OCLKernel extends TornadoLogger {
         try {
             clSetKernelArg(oclKernelID, index, 8, null);
         } catch (OCLException e) {
-            error(e.getMessage());
+            TornadoLogger.error(e.getMessage());
         }
     }
 
@@ -98,7 +96,7 @@ public class OCLKernel extends TornadoLogger {
         try {
             clSetKernelArg(oclKernelID, index, size, null);
         } catch (OCLException e) {
-            error(e.getMessage());
+            TornadoLogger.error(e.getMessage());
         }
     }
 

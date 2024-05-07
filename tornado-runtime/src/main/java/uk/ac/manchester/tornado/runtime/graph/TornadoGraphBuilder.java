@@ -12,15 +12,13 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Authors: James Clarkson
  *
  */
 package uk.ac.manchester.tornado.runtime.graph;
@@ -35,6 +33,7 @@ import uk.ac.manchester.tornado.api.common.Access;
 import uk.ac.manchester.tornado.api.common.SchedulableTask;
 import uk.ac.manchester.tornado.api.exceptions.TornadoRuntimeException;
 import uk.ac.manchester.tornado.runtime.TornadoCoreRuntime;
+import uk.ac.manchester.tornado.runtime.common.TornadoXPUDevice;
 import uk.ac.manchester.tornado.runtime.graph.nodes.AbstractNode;
 import uk.ac.manchester.tornado.runtime.graph.nodes.AllocateMultipleBuffersNode;
 import uk.ac.manchester.tornado.runtime.graph.nodes.AllocateNode;
@@ -92,11 +91,11 @@ public class TornadoGraphBuilder {
      * {@link TornadoExecutionContext} and ByteBuffer.
      *
      * @param executionContext
-     *            The {@link TornadoExecutionContext} that contains the context of
-     *            the graph.
+     *     The {@link TornadoExecutionContext} that contains the context of
+     *     the graph.
      * @param buffer
-     *            The {@link ByteBuffer} containing the bytecode representation of
-     *            the graph.
+     *     The {@link ByteBuffer} containing the bytecode representation of
+     *     the graph.
      * @return The constructed {@link TornadoGraph}.
      */
     public static TornadoGraph buildGraph(TornadoExecutionContext executionContext, ByteBuffer buffer) {
@@ -204,7 +203,7 @@ public class TornadoGraphBuilder {
                 taskIndex = buffer.getInt();
                 task = executionContext.getTask(taskIndex);
 
-                /**
+                /*
                  * Note, {@code executionContext.getDevices().indexOf} retrieves the device
                  * index in the {@code Device[]} array, which is different from the device index
                  * that appears in the output of the Tornado devices command. So, internally, we
@@ -219,7 +218,8 @@ public class TornadoGraphBuilder {
                  * array.
                  *
                  */
-                context = graph.addUnique(new ContextNode(executionContext.getDevices().indexOf(executionContext.getDeviceForTask(taskIndex)), executionContext.getDeviceForTask(taskIndex)));
+                TornadoXPUDevice deviceForTask = executionContext.getDeviceForTask(taskIndex);
+                context = graph.addUnique(new ContextNode(executionContext.getDevices().indexOf(deviceForTask), deviceForTask));
 
                 persist = graph.addUnique(new AllocateMultipleBuffersNode(context));
                 context.addUse(persist);

@@ -28,7 +28,6 @@ import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.TornadoExecutionResult;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
-import uk.ac.manchester.tornado.api.runtime.TornadoRuntime;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.unittests.arrays.TestArrays;
 import uk.ac.manchester.tornado.unittests.common.TornadoTestBase;
@@ -171,13 +170,11 @@ public class TestIO extends TornadoTestBase {
     @Test
     public void testCopyInWithDevice() {
         final int N = 8096;
-        final int ITERATIONS = 10;
+        final int ITERATIONS = 20;
 
         FloatArray arrayA = createAndInitializeArray(N);
         FloatArray arrayB = createAndInitializeArray(N);
         FloatArray arrayC = new FloatArray(N);
-
-        TornadoRuntime.getTornadoRuntime().getDefaultDevice().reset();
 
         // Enable profiler
         System.setProperty("tornado.profiler", "True");
@@ -206,8 +203,8 @@ public class TestIO extends TornadoTestBase {
             copyInSumSimpleExecWithDev += executionResult.getProfilerResult().getDeviceWriteTime();
         }
 
-        // Generous assertions with delta of 10%
-        assertEquals(copyInSumSimpleExec, copyInSumSimpleExecWithDev, (float) copyInSumSimpleExec / 10);
+        // Generous assertions with delta of 12%
+        assertEquals(copyInSumSimpleExec, copyInSumSimpleExecWithDev, (float) copyInSumSimpleExec / 12);
 
     }
     // CHECKSTYLE:ON

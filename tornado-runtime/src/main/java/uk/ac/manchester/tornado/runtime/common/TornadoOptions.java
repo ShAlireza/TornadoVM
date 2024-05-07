@@ -34,6 +34,17 @@ public class TornadoOptions {
     public static final boolean TIME_IN_NANOSECONDS = Boolean.parseBoolean(System.getProperty("tornado.ns.time", TRUE));
     public static final int DEFAULT_DRIVER_INDEX = Integer.parseInt(Tornado.getProperty("tornado.driver", "0"));
     public static final int DEFAULT_DEVICE_INDEX = Integer.parseInt(Tornado.getProperty("tornado.device", "0"));
+
+    /**
+     * Enable thread deployment debugging from the TornadoVM runtime and code dispatcher.
+     */
+    public static final boolean THREAD_INFO = getBooleanValue("tornado.threadInfo", FALSE);
+
+    /**
+     * Enable the runtime to dump the generated code (e.g., OpenCL, CUDA PTX or SPIR-V) from the TornadoVM JIT Compiler.
+     */
+    public static final boolean PRINT_KERNEL_SOURCE = getBooleanValue("tornado.print.kernel", FALSE);
+
     /**
      * Priority of the PTX Backend. The higher the number, the more priority over
      * the rest of the backends.
@@ -66,12 +77,7 @@ public class TornadoOptions {
      * Option to print TornadoVM Internal Bytecodes.
      */
     public static final boolean PRINT_BYTECODES = getBooleanValue("tornado.print.bytecodes", FALSE);
-    /**
-     * Option to debug dynamic reconfiguration policies.
-     * <p>
-     * Use `-Dtornado.dynamic.verbose=True`.
-     */
-    public static final boolean DEBUG_POLICY = getBooleanValue("tornado.dynamic.verbose", FALSE);
+
     /**
      * Option to enable experimental and new option for performing automatic full
      * reductions.
@@ -88,7 +94,7 @@ public class TornadoOptions {
     /**
      * Enable/Disable FMA Optimizations. True by default.
      */
-    public static final boolean ENABLE_FMA = getBooleanValue("tornado.enable.fma", "True");
+    public static final boolean ENABLE_FMA = getBooleanValue("tornado.enable.fma", TRUE);
     /**
      * Enable/Disable Fix Reads Optimization. True by default.
      */
@@ -97,10 +103,7 @@ public class TornadoOptions {
      * Enable/Disable events dumping on program finish. False by default.
      */
     public static final boolean DUMP_EVENTS = Boolean.parseBoolean(getProperty("tornado.events.dump", FALSE));
-    /**
-     * Prints the generated code by the TornadoVM compiler. Default is False.
-     */
-    public static final boolean PRINT_SOURCE = Boolean.parseBoolean(getProperty("tornado.print.kernel", FALSE));
+
     /**
      * Prints the generated code by the TornadoVM compiler. Default is False.
      */
@@ -240,25 +243,41 @@ public class TornadoOptions {
      * default.
      */
     public static final boolean ENABLE_STREAM_OUT_BLOCKING = getBooleanValue("tornado.enable.streamOut.blocking", TRUE);
+
     /**
      * Option to run concurrently on multiple device in single or multi-backend
      * configuration. False by default.
      */
     public static final boolean CONCURRENT_INTERPRETERS = Boolean.parseBoolean(System.getProperty("tornado.concurrent.devices", "False"));
+
+    /**
+     * Panama Object Header in TornadoVM.
+     */
     public static final long PANAMA_OBJECT_HEADER_SIZE = TornadoNativeArray.ARRAY_HEADER;
 
-    public static String PROFILER_LOG = "tornado.log.profiler";
-    public static String PROFILER = "tornado.profiler";
+    /**
+     * Option to define the maximum number of internal events related to OpenCL/PTX/SPIR-V events to keep alive.
+     * This is application specific. In a large application, there are probably many events that need to keep alive
+     * to perform the sync.
+     */
+    public static final int MAX_EVENTS = getIntValue("tornado.max.events", "32768");
+
+    public static boolean TORNADO_PROFILER_LOG = false;
+
+    public static boolean TORNADO_PROFILER = false;
+
     /**
      * Option to load FPGA pre-compiled binaries.
      */
     public static StringBuilder FPGA_BINARIES = System.getProperty("tornado.precompiled.binary", null) != null ? new StringBuilder(System.getProperty("tornado.precompiled.binary", null)) : null;
+    private static String PROFILER_LOG = "tornado.log.profiler";
+    private static String PROFILER = "tornado.profiler";
 
     /**
      * Option for enabling saving the profiler into a file.
      */
     public static boolean PROFILER_LOGS_ACCUMULATE() {
-        return getBooleanValue(PROFILER_LOG, FALSE);
+        return TornadoOptions.TORNADO_PROFILER_LOG || getBooleanValue(PROFILER_LOG, FALSE);
     }
 
     /**
@@ -275,7 +294,7 @@ public class TornadoOptions {
      * @return boolean.
      */
     public static boolean isProfilerEnabled() {
-        return getBooleanValue(PROFILER, FALSE);
+        return TORNADO_PROFILER || getBooleanValue(PROFILER, FALSE);
     }
 
     /**
@@ -301,5 +320,4 @@ public class TornadoOptions {
         String contextEmulatorXilinxFPGA = System.getenv("XCL_EMULATION_MODE");
         return (contextEmulatorIntelFPGA != null && (contextEmulatorIntelFPGA.equals("1"))) || (contextEmulatorXilinxFPGA != null && (contextEmulatorXilinxFPGA.equals("sw_emu")));
     }
-
 }

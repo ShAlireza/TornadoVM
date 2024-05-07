@@ -20,8 +20,6 @@
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
  *
- * Authors: James Clarkson
- *
  */
 package uk.ac.manchester.tornado.drivers.opencl.graal;
 
@@ -49,9 +47,6 @@ import jdk.vm.ci.hotspot.HotSpotConstantReflectionProvider;
 import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime;
 import jdk.vm.ci.hotspot.HotSpotMetaAccessProvider;
 import jdk.vm.ci.runtime.JVMCIBackend;
-import uk.ac.manchester.tornado.drivers.graal.TornadoMetaAccessExtensionProvider;
-import uk.ac.manchester.tornado.drivers.graal.TornadoPlatformConfigurationProvider;
-import uk.ac.manchester.tornado.drivers.graal.TornadoWordTypes;
 import uk.ac.manchester.tornado.drivers.opencl.OCLDeviceContextInterface;
 import uk.ac.manchester.tornado.drivers.opencl.OCLExecutionEnvironment;
 import uk.ac.manchester.tornado.drivers.opencl.OCLTargetDescription;
@@ -61,7 +56,10 @@ import uk.ac.manchester.tornado.drivers.opencl.graal.compiler.OCLCompilerConfigu
 import uk.ac.manchester.tornado.drivers.opencl.graal.compiler.plugins.OCLGraphBuilderPlugins;
 import uk.ac.manchester.tornado.drivers.opencl.graal.lir.OCLAddressLowering;
 import uk.ac.manchester.tornado.drivers.opencl.graal.lir.OCLKind;
-import uk.ac.manchester.tornado.runtime.TornadoVMConfig;
+import uk.ac.manchester.tornado.drivers.providers.TornadoMetaAccessExtensionProvider;
+import uk.ac.manchester.tornado.drivers.providers.TornadoPlatformConfigurationProvider;
+import uk.ac.manchester.tornado.drivers.providers.TornadoWordTypes;
+import uk.ac.manchester.tornado.runtime.TornadoVMConfigAccess;
 import uk.ac.manchester.tornado.runtime.graal.DummySnippetFactory;
 import uk.ac.manchester.tornado.runtime.graal.compiler.TornadoConstantFieldProvider;
 import uk.ac.manchester.tornado.runtime.graal.compiler.TornadoForeignCallsProvider;
@@ -77,23 +75,19 @@ public class OCLHotSpotBackendFactory {
     private static final OCLCompilerConfiguration compilerConfiguration = new OCLCompilerConfiguration();
     private static final OCLAddressLowering addressLowering = new OCLAddressLowering();
 
-    public static OCLBackend createJITCompiler(OptionValues options, HotSpotJVMCIRuntime jvmciRuntime, TornadoVMConfig config, OCLExecutionEnvironment tornadoContext, OCLTargetDevice device) {
+    public static OCLBackend createJITCompiler(OptionValues options, HotSpotJVMCIRuntime jvmciRuntime, TornadoVMConfigAccess config, OCLExecutionEnvironment tornadoContext, OCLTargetDevice device) {
         JVMCIBackend jvmciBackend = jvmciRuntime.getHostJVMCIBackend();
         HotSpotMetaAccessProvider metaAccess = (HotSpotMetaAccessProvider) jvmciBackend.getMetaAccess();
         HotSpotConstantReflectionProvider constantReflection = (HotSpotConstantReflectionProvider) jvmciBackend.getConstantReflection();
 
-        OCLKind wordKind = OCLKind.ILLEGAL;
-        switch (device.getWordSize()) {
-            case 4:
-                wordKind = OCLKind.UINT;
-                break;
-            case 8:
-                wordKind = OCLKind.ULONG;
-                break;
-            default:
+        OCLKind wordKind = switch (device.getWordSize()) {
+            case 4 -> OCLKind.UINT;
+            case 8 -> OCLKind.ULONG;
+            default -> {
                 shouldNotReachHere("unknown word size for device: word size is %d on %s", device.getWordSize(), device.getDeviceName());
-                break;
-        }
+                yield OCLKind.ILLEGAL;
+            }
+        };
 
         OCLArchitecture arch = new OCLArchitecture(wordKind, device.getByteOrder());
         OCLTargetDescription target = new OCLTargetDescription(arch, device.isDeviceDoubleFPSupported(), device.getDeviceExtensions());

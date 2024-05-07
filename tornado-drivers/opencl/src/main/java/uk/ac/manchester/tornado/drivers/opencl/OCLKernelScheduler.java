@@ -12,15 +12,13 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- *
  */
 package uk.ac.manchester.tornado.drivers.opencl;
 
@@ -39,8 +37,8 @@ public abstract class OCLKernelScheduler {
     protected double min;
     protected double max;
 
-    public static final String WARNING_FPGA_THREAD_LOCAL = "[TornadoVM OCL] Warning: TornadoVM changed the user-defined local size to: " + Arrays.toString(OCLFPGAScheduler.DEFAULT_LOCAL_WORK_SIZE)
-            + ".";
+    public static final String WARNING_FPGA_THREAD_LOCAL = "[TornadoVM OCL] Warning: TornadoVM changed the user-defined local size to: " + Arrays.toString(
+            OCLFPGAScheduler.DEFAULT_LOCAL_WORK_SIZE) + ".";
 
     public static final String WARNING_THREAD_LOCAL = "[TornadoVM OCL] Warning: TornadoVM changed the user-defined local size to null. Now, the OpenCL driver will select the best configuration.";
 
@@ -52,14 +50,14 @@ public abstract class OCLKernelScheduler {
 
     public abstract void calculateLocalWork(final TaskMetaData meta);
 
-    public int submit(final OCLKernel kernel, final TaskMetaData meta, long batchThreads) {
-        return submit(kernel, meta, null, batchThreads);
+    public int submit(long executionPlanId, final OCLKernel kernel, final TaskMetaData meta, long batchThreads) {
+        return submit(executionPlanId, kernel, meta, null, batchThreads);
     }
 
-    private void updateProfiler(final int taskEvent, final TaskMetaData meta) {
+    private void updateProfiler(long executionPlanId, final int taskEvent, final TaskMetaData meta) {
         if (TornadoOptions.isProfilerEnabled()) {
-            Event tornadoKernelEvent = deviceContext.resolveEvent(taskEvent);
-            tornadoKernelEvent.waitForEvents();
+            Event tornadoKernelEvent = deviceContext.resolveEvent(executionPlanId, taskEvent);
+            tornadoKernelEvent.waitForEvents(executionPlanId);
             long timer = meta.getProfiler().getTimer(ProfilerType.TOTAL_KERNEL_TIME);
             // Register globalTime
             meta.getProfiler().setTimer(ProfilerType.TOTAL_KERNEL_TIME, timer + tornadoKernelEvent.getElapsedTime());
@@ -69,19 +67,21 @@ public abstract class OCLKernelScheduler {
             long dispatchValue = meta.getProfiler().getTimer(ProfilerType.TOTAL_DISPATCH_KERNEL_TIME);
             dispatchValue += tornadoKernelEvent.getDriverDispatchTime();
             meta.getProfiler().setTimer(ProfilerType.TOTAL_DISPATCH_KERNEL_TIME, dispatchValue);
+            meta.getProfiler().setTaskPowerUsage(ProfilerType.POWER_USAGE_mW, meta.getId(), deviceContext.getPowerUsage());
         }
     }
 
-    public int launch(final OCLKernel kernel, final TaskMetaData meta, final int[] waitEvents, long batchThreads) {
+    public int launch(long executionPlanId, final OCLKernel kernel, final TaskMetaData meta, final int[] waitEvents, long batchThreads) {
         if (meta.isWorkerGridAvailable()) {
             WorkerGrid grid = meta.getWorkerGrid(meta.getId());
             long[] global = grid.getGlobalWork();
             long[] offset = grid.getGlobalOffset();
             long[] local = grid.getLocalWork();
-            return deviceContext.enqueueNDRangeKernel(kernel, grid.dimension(), offset, global, local, waitEvents);
+            return deviceContext.enqueueNDRangeKernel(executionPlanId, kernel, grid.dimension(), offset, global, local, waitEvents);
         } else {
-            return deviceContext.enqueueNDRangeKernel(kernel, meta.getDims(), meta.getGlobalOffset(), meta.getGlobalWork(), (meta.shouldUseOpenCLDriverScheduling() ? null : meta.getLocalWork()),
-                    waitEvents);
+            return deviceContext.enqueueNDRangeKernel(executionPlanId, kernel, meta.getDims(), meta.getGlobalOffset(), meta.getGlobalWork(), (meta.shouldUseOpenCLDriverScheduling()
+                    ? null
+                    : meta.getLocalWork()), waitEvents);
         }
     }
 
@@ -92,7 +92,7 @@ public abstract class OCLKernelScheduler {
      * depends on each OpenCL driver.
      *
      * @param meta
-     *            TaskMetaData.
+     *     TaskMetaData.
      */
     private void checkLocalWorkGroupFitsOnDevice(final TaskMetaData meta) {
         WorkerGrid grid = meta.getWorkerGrid(meta.getId());
@@ -114,7 +114,7 @@ public abstract class OCLKernelScheduler {
         }
     }
 
-    public int submit(final OCLKernel kernel, final TaskMetaData meta, final int[] waitEvents, long batchThreads) {
+    public int submit(long executionPlanId, final OCLKernel kernel, final TaskMetaData meta, final int[] waitEvents, long batchThreads) {
         if (!meta.isWorkerGridAvailable()) {
             if (!meta.isGlobalWorkDefined()) {
                 calculateGlobalWork(meta, batchThreads);
@@ -129,8 +129,8 @@ public abstract class OCLKernelScheduler {
         if (meta.isThreadInfoEnabled()) {
             meta.printThreadDims();
         }
-        final int taskEvent = launch(kernel, meta, waitEvents, batchThreads);
-        updateProfiler(taskEvent, meta);
+        final int taskEvent = launch(executionPlanId, kernel, meta, waitEvents, batchThreads);
+        updateProfiler(executionPlanId, taskEvent, meta);
         return taskEvent;
     }
 

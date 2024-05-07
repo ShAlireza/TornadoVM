@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2022, 2022, APT Group, Department of Computer Science,
+ * Copyright (c) 2013-2023, APT Group, Department of Computer Science,
  * The University of Manchester.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,9 +98,9 @@ public class SgemmTornado extends BenchmarkDriver {
             String filePath = "/tmp/mxmFloat.spv";
 
             TornadoDevice device = null;
-            int maxDevices = TornadoRuntime.getTornadoRuntime().getDriver(0).getDeviceCount();
+            int maxDevices = TornadoRuntime.getTornadoRuntime().getBackend(0).getDeviceCount();
             for (int i = 0; i < maxDevices; i++) {
-                device = TornadoRuntime.getTornadoRuntime().getDriver(0).getDevice(i);
+                device = TornadoRuntime.getTornadoRuntime().getBackend(0).getDevice(i);
                 if (device.isSPIRVSupported()) {
                     break;
                 }

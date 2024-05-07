@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, 2022, APT Group, Department of Computer Science,
+ * Copyright (c) 2013-2023, APT Group, Department of Computer Science,
  * The University of Manchester.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,6 @@
  * limitations under the License.
  *
  */
-
 package uk.ac.manchester.tornado.benchmarks.nbody;
 
 import static uk.ac.manchester.tornado.api.math.TornadoMath.abs;
@@ -129,7 +128,7 @@ public class NBodyTornado extends BenchmarkDriver {
         }
         taskGraph = new TaskGraph("benchmark");
         taskGraph.task("t0", ComputeKernels::nBody, numBodies, posSeq, velSeq, delT, espSqr);
-        taskGraph.transferToHost(DataTransferMode.USER_DEFINED, posSeq, velSeq);
+        taskGraph.transferToHost(DataTransferMode.UNDER_DEMAND, posSeq, velSeq);
 
         immutableTaskGraph = taskGraph.snapshot();
         executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
