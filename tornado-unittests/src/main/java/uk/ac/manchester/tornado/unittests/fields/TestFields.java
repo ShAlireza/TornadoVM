@@ -18,6 +18,7 @@
 package uk.ac.manchester.tornado.unittests.fields;
 
 import org.junit.Test;
+import uk.ac.manchester.tornado.api.DataRange;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
@@ -75,7 +76,7 @@ public class TestFields extends TornadoTestBase {
         executionPlan.freeDeviceMemory();
 
         for (int i = 0; i < N; i++) {
-            assertEquals(100, foo.output[i]);
+            assertEquals(100, foo.output.get(i));
         }
     }
 
@@ -97,7 +98,7 @@ public class TestFields extends TornadoTestBase {
         executionResult.transferToHost(foo.output);
 
         for (int i = 0; i < N; i++) {
-            //              assertEquals(foo.a.get(i) + foo.b.get(i), foo.output.get(i));
+           assertEquals(foo.a.get(i) + foo.b.get(i), foo.output.get(i));
         }
     }
 
@@ -119,6 +120,80 @@ public class TestFields extends TornadoTestBase {
 
         for (int i = 0; i < N; i++) {
             assertEquals(15, bar.output.get(i));
+        }
+    }
+
+    @Test
+    public void testFieldsPartialCopyout() {
+        final int N = 1024;
+        Foo foo = new Foo(N);
+        foo.initRandom();
+
+        TaskGraph taskGraph = new TaskGraph("s0");
+        taskGraph.task("t0", foo::computeAdd);
+
+        ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
+        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
+        TornadoExecutionResult executionResult = executionPlan.execute();
+
+        executionPlan.freeDeviceMemory();
+
+        DataRange dataRange = new DataRange(foo.output);
+
+        executionResult.transferToHost(dataRange.withSize(N / 2));
+
+        executionResult.transferToHost(dataRange.withOffset(N / 2).withSize(N / 2));
+
+        for (int i = 0; i < N; i++) {
+            assertEquals(foo.a.get(i) + foo.b.get(i), foo.output.get(i));
+        }
+    }
+
+    @Test
+    public void testFieldsLazyCopyout() {
+        final int N = 1024;
+        Foo foo = new Foo(N);
+        foo.initRandom();
+
+        TaskGraph taskGraph = new TaskGraph("s0")
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, foo.a, foo.b)
+                .task("t0", foo::computeAdd, foo.a, foo.b, foo.output)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, foo.output);
+
+        ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
+        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
+        TornadoExecutionResult executionResult = executionPlan.execute();
+
+        executionResult.transferToHost(foo.output);
+
+        for (int i = 0; i < N; i++) {
+            assertEquals(foo.a.get(i) + foo.b.get(i), foo.output.get(i));
+        }
+    }
+
+    @Test
+    public void testFieldsPartialLazyCopyout() {
+        final int N = 1024;
+        Foo foo = new Foo(N);
+        foo.initRandom();
+
+        TaskGraph taskGraph = new TaskGraph("s0")
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, foo.a, foo.b)
+                .task("t0", foo::computeAdd, foo.a, foo.b, foo.output)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, foo.output);
+
+        ImmutableTaskGraph immutableTaskGraph = taskGraph.snapshot();
+        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTaskGraph);
+        TornadoExecutionResult executionResult = executionPlan.execute();
+
+        DataRange dataRange = new DataRange(foo.output);
+
+        executionResult.transferToHost(dataRange.withSize(N / 2));
+
+        executionResult.transferToHost(dataRange.withOffset(N / 2).withSize(N / 2));
+
+        for (int i = 0; i < N; i++) {
+            assertEquals(foo.a.get(i) + foo.b.get(i), foo.output.get(i));
         }
     }
 
@@ -201,41 +276,39 @@ public class TestFields extends TornadoTestBase {
     }
 
     private static class Foo {
-        //        final IntArray output;
-        //        final IntArray a;
-        //        final IntArray b;
-        final int[] output;
-        final int[] a;
-        final int[] b;
+        final IntArray output;
+        final IntArray a;
+        final IntArray b;
 
         Foo(int elements) {
-            //            output = new IntArray(elements);
-            //            a = new IntArray(elements);
-            //            b = new IntArray(elements);
-            output = new int[elements];
-            a = new int[elements];
-            b = new int[elements];
+            output = new IntArray(elements);
+            a = new IntArray(elements);
+            b = new IntArray(elements);
         }
 
         public void initRandom() {
             Random r = new Random();
-            IntStream.range(0, a.length).forEach(idx -> {
-                //                a.set(idx, r.nextInt(100));
-                //                b.set(idx, r.nextInt(100));
-                a[idx] = r.nextInt(100);
-                b[idx] = r.nextInt(100);
+            IntStream.range(0, a.getSize()).forEach(idx -> {
+                a.set(idx, r.nextInt(100));
+                b.set(idx, r.nextInt(100));
             });
         }
 
         public void computeInit() {
-            for (@Parallel int i = 0; i < output.length; i++) {
-                output[i] = 100;
+            for (@Parallel int i = 0; i < output.getSize(); i++) {
+                output.set(i, 100);
             }
         }
 
         public void computeAdd() {
-            for (@Parallel int i = 0; i < output.length; i++) {
-                output[i] = a[i] + b[i];
+            for (@Parallel int i = 0; i < output.getSize(); i++) {
+                output.set(i, a.get(i) + b.get(i));
+            }
+        }
+
+        public void computeAdd(IntArray a, IntArray b, IntArray output) {
+            for (@Parallel int i = 0; i < output.getSize(); i++) {
+                output.set(i, a.get(i) + b.get(i));
             }
         }
     }

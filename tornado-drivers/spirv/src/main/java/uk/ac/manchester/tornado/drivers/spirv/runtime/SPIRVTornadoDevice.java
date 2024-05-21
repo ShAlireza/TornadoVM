@@ -159,7 +159,7 @@ public class SPIRVTornadoDevice implements TornadoXPUDevice {
         final SPIRVDeviceContext deviceContext = getDeviceContext();
 
         final ResolvedJavaMethod resolvedMethod = TornadoCoreRuntime.getTornadoRuntime().resolveMethod(task.getMethod());
-        final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getDriverIndex(), task.meta().getDeviceIndex());
+        final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getBackendIndex(), task.meta().getDeviceIndex());
 
         // copy meta data into task
         final TaskMetaData taskMeta = task.meta();
@@ -189,8 +189,9 @@ public class SPIRVTornadoDevice implements TornadoXPUDevice {
             profiler.sum(ProfilerType.TOTAL_DRIVER_COMPILE_TIME, profiler.getTaskTimer(ProfilerType.TASK_COMPILE_DRIVER_TIME, taskMeta.getId()));
             return installedCode;
         } catch (Exception e) {
-            TornadoLogger.fatal("Unable to compile %s for device %s\n", task.getId(), getDeviceName());
-            TornadoLogger.fatal("Exception occurred when compiling %s\n", task.getMethod().getName());
+            TornadoLogger logger = new TornadoLogger(this.getClass());
+            logger.fatal("Unable to compile %s for device %s\n", task.getId(), getDeviceName());
+            logger.fatal("Exception occurred when compiling %s\n", task.getMethod().getName());
             if (TornadoOptions.RECOVER_BAILOUT) {
                 throw new TornadoBailoutRuntimeException(STR."[Error During the Task Compilation]: \{e.getMessage()}");
             } else {
@@ -242,6 +243,18 @@ public class SPIRVTornadoDevice implements TornadoXPUDevice {
     @Override
     public void setAtomicRegion(XPUBuffer bufferAtomics) {
         throw new RuntimeException("Unsupported");
+    }
+
+    @Override
+    public boolean loopIndexInWrite(SchedulableTask task) {
+        if (task instanceof CompilableTask) {
+            final CompilableTask executable = (CompilableTask) task;
+            final ResolvedJavaMethod resolvedMethod = TornadoCoreRuntime.getTornadoRuntime().resolveMethod(executable.getMethod());
+            final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getBackendIndex(), task.meta().getDeviceIndex());
+            return sketch.getBatchWriteThreadIndex();
+        } else {
+            return false;
+        }
     }
 
     private XPUBuffer createArrayWrapper(Class<?> klass, SPIRVDeviceContext device, long batchSize) {

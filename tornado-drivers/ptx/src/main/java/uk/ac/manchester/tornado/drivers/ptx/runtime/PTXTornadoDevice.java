@@ -81,7 +81,6 @@ import uk.ac.manchester.tornado.drivers.ptx.mm.PTXVectorWrapper;
 import uk.ac.manchester.tornado.runtime.TornadoCoreRuntime;
 import uk.ac.manchester.tornado.runtime.common.KernelStackFrame;
 import uk.ac.manchester.tornado.runtime.common.RuntimeUtilities;
-import uk.ac.manchester.tornado.runtime.common.Tornado;
 import uk.ac.manchester.tornado.runtime.common.TornadoInstalledCode;
 import uk.ac.manchester.tornado.runtime.common.TornadoLogger;
 import uk.ac.manchester.tornado.runtime.common.TornadoOptions;
@@ -100,6 +99,7 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
     private static PTXBackendImpl driver = null;
     private final PTXDevice device;
     private final int deviceIndex;
+    private final TornadoLogger logger;
 
     public PTXTornadoDevice(final int deviceIndex) {
         this.deviceIndex = deviceIndex;
@@ -108,11 +108,12 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
             throw new RuntimeException("TornadoVM PTX Driver not found");
         }
         device = PTX.getPlatform().getDevice(deviceIndex);
+        this.logger = new TornadoLogger(this.getClass());
     }
 
     @Override
     public TornadoSchedulingStrategy getPreferredSchedule() {
-        return TornadoSchedulingStrategy.PER_ITERATION;
+        return TornadoSchedulingStrategy.PER_ACCELERATOR_ITERATION;
     }
 
     @Override
@@ -127,7 +128,7 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
 
     @Override
     public int[] checkAtomicsForTask(SchedulableTask task) {
-        Tornado.debug("[PTX] Atomics not implemented ! Returning null");
+        logger.debug("[PTX] Atomics not implemented ! Returning null");
         return null;
     }
 
@@ -166,7 +167,7 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
 
         final CompilableTask executable = (CompilableTask) task;
         final ResolvedJavaMethod resolvedMethod = TornadoCoreRuntime.getTornadoRuntime().resolveMethod(executable.getMethod());
-        final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getDriverIndex(), task.meta().getDeviceIndex());
+        final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getBackendIndex(), task.meta().getDeviceIndex());
 
         // copy meta data into task
         final TaskMetaData taskMeta = executable.meta();
@@ -192,11 +193,11 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
             profiler.sum(ProfilerType.TOTAL_DRIVER_COMPILE_TIME, profiler.getTaskTimer(ProfilerType.TASK_COMPILE_DRIVER_TIME, taskMeta.getId()));
             return installedCode;
         } catch (Exception e) {
-            if (Tornado.DEBUG) {
+            if (TornadoOptions.DEBUG) {
                 System.err.println(e.getMessage());
             }
-            TornadoLogger.fatal("unable to compile %s for device %s\n", task.getId(), getDeviceName());
-            TornadoLogger.fatal("exception occurred when compiling %s\n", ((CompilableTask) task).getMethod().getName());
+            logger.fatal("unable to compile %s for device %s\n", task.getId(), getDeviceName());
+            logger.fatal("exception occurred when compiling %s\n", ((CompilableTask) task).getMethod().getName());
             throw new TornadoBailoutRuntimeException("[Error During the Task Compilation] ", e);
         }
     }
@@ -667,6 +668,18 @@ public class PTXTornadoDevice implements TornadoXPUDevice {
     @Override
     public void setAtomicRegion(XPUBuffer bufferAtomics) {
 
+    }
+
+    @Override
+    public boolean loopIndexInWrite(SchedulableTask task) {
+        if (task instanceof CompilableTask) {
+            final CompilableTask executable = (CompilableTask) task;
+            final ResolvedJavaMethod resolvedMethod = TornadoCoreRuntime.getTornadoRuntime().resolveMethod(executable.getMethod());
+            final Sketch sketch = TornadoSketcher.lookup(resolvedMethod, task.meta().getBackendIndex(), task.meta().getDeviceIndex());
+            return sketch.getBatchWriteThreadIndex();
+        } else {
+            return false;
+        }
     }
 
     @Override
