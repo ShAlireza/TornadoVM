@@ -47,13 +47,14 @@ import uk.ac.manchester.tornado.api.memory.XPUBuffer;
 import uk.ac.manchester.tornado.api.profiler.ProfilerType;
 import uk.ac.manchester.tornado.api.profiler.TornadoProfiler;
 import uk.ac.manchester.tornado.api.types.arrays.TornadoNativeArray;
+import uk.ac.manchester.tornado.api.types.tensors.Tensor;
 import uk.ac.manchester.tornado.drivers.common.TornadoBufferProvider;
 import uk.ac.manchester.tornado.drivers.opencl.mm.AtomicsBuffer;
 import uk.ac.manchester.tornado.drivers.spirv.SPIRVBackend;
 import uk.ac.manchester.tornado.drivers.spirv.SPIRVBackendImpl;
 import uk.ac.manchester.tornado.drivers.spirv.SPIRVDevice;
 import uk.ac.manchester.tornado.drivers.spirv.SPIRVDeviceContext;
-import uk.ac.manchester.tornado.drivers.spirv.SPIRVProxy;
+import uk.ac.manchester.tornado.drivers.spirv.SPIRVRuntimeImpl;
 import uk.ac.manchester.tornado.drivers.spirv.graal.SPIRVProviders;
 import uk.ac.manchester.tornado.drivers.spirv.graal.compiler.SPIRVCompilationResult;
 import uk.ac.manchester.tornado.drivers.spirv.graal.compiler.SPIRVCompiler;
@@ -97,7 +98,7 @@ public class SPIRVTornadoDevice implements TornadoXPUDevice {
     public SPIRVTornadoDevice(int platformIndex, int deviceIndex) {
         this.platformIndex = platformIndex;
         this.deviceIndex = deviceIndex;
-        device = SPIRVProxy.getPlatform(platformIndex).getDevice(deviceIndex);
+        device = SPIRVRuntimeImpl.getInstance().getPlatform(platformIndex).getDevice(deviceIndex);
     }
 
     public SPIRVTornadoDevice(SPIRVDevice lowLevelDevice) {
@@ -318,7 +319,8 @@ public class SPIRVTornadoDevice implements TornadoXPUDevice {
                 return new SPIRVVectorWrapper(deviceContext, object, batchSize);
             } else if (object instanceof MemorySegment) {
                 return new SPIRVMemorySegmentWrapper(deviceContext, batchSize);
-            } else if (object instanceof TornadoNativeArray) {
+            } else if (object instanceof TornadoNativeArray && !(object instanceof Tensor)) {
+                // For Tensor objects, we use the SPIRVObjectWrapper
                 return new SPIRVMemorySegmentWrapper(deviceContext, batchSize);
             } else {
                 // Possible a vector type, we encapsulate in an object
