@@ -137,7 +137,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
     private void killSleepProcess() {
         try {
-            String command = "kill -9 $(ps aux | grep -i sleep | awk '{print$2})' | head -n 1";
+            String command = "kill -9 $(ps aux | grep -i sleep | awk '{print$2}' | head -n 1)";
             ProcessBuilder processBuilder = new ProcessBuilder("bash", "-c", command);
             int killExitCode = 1;
             while (killExitCode != 0) {
@@ -146,14 +146,15 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
               if (killExitCode != 0) {
                 System.out.println("Killing sleep failed");
-              }
-              BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-              BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
 
-              String errorLine;
-              while ((errorLine = errorReader.readLine()) != null) {
-                  System.out.println("Error: " + errorLine);
+                String errorLine;
+                while ((errorLine = errorReader.readLine()) != null) {
+                    System.out.println("Error: " + errorLine);
+                }
               }
+              
             }
             
         } catch (IOException | InterruptedException e) {
