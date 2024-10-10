@@ -121,7 +121,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
     private Process runIntelPCM() {
         Process p = null;
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "0.01").inheritIO();
+            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "0.001").inheritIO();
             // File outputFile = new File("cpu.metrics");
             // processBuilder.redirectOutput(outputFile);
             // processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
