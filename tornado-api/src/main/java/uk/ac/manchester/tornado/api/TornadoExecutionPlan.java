@@ -137,19 +137,15 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
     private void killSleepProcess() {
         try {
-            String command = "ps -e | grep sleep | awk '{print $1}'";
+            String command = "kill $(ps aux | grep sleep | awk '{print $2})'";
             ProcessBuilder processBuilder = new ProcessBuilder("bash", "-c", command);
             Process process = processBuilder.start();
+            int killExitCode = process.waitFor();
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String pid = reader.readLine();
-
-            if (pid != null && !pid.isEmpty()) {
-                ProcessBuilder killBuilder = new ProcessBuilder("bash", "-c", "kill -9 " + pid);
-                Process killProcess = killBuilder.start();
-
-                int killExitCode = killProcess.waitFor();
+            if (killExitCode != 0) {
+              System.out.println("Killing sleep failed");
             }
+
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
