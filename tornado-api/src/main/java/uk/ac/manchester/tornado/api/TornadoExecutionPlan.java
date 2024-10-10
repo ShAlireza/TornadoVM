@@ -147,6 +147,13 @@ public class TornadoExecutionPlan implements AutoCloseable {
               if (killExitCode != 0) {
                 System.out.println("Killing sleep failed");
               }
+              BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+              BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+
+              String errorLine;
+              while ((errorLine = errorReader.readLine()) != null) {
+                  System.out.println("Error: " + errorLine);
+              }
             }
             
         } catch (IOException | InterruptedException e) {
