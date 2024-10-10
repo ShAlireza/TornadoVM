@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.io.*;
+import java.util.*;
 
 import uk.ac.manchester.tornado.api.common.TornadoDevice;
 import uk.ac.manchester.tornado.api.enums.ProfilerMode;
@@ -31,6 +33,8 @@ import uk.ac.manchester.tornado.api.exceptions.TornadoExecutionPlanException;
 import uk.ac.manchester.tornado.api.exceptions.TornadoRuntimeException;
 import uk.ac.manchester.tornado.api.runtime.ExecutorFrame;
 import uk.ac.manchester.tornado.api.runtime.TornadoRuntime;
+import uk.ac.manchester.tornado.api.enums.TornadoDeviceType;
+
 
 /**
  * Object to create and optimize an execution plan for running a set of
@@ -113,9 +117,41 @@ public class TornadoExecutionPlan implements AutoCloseable {
      *
      * @return {@link TornadoExecutionPlan}
      */
+
+    private Process runIntelPCM() {
+        Process p = null;
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "0.01");
+            // File outputFile = new File("cpu.metrics");
+            // processBuilder.redirectOutput(outputFile);
+            processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
+            p = processBuilder.start();
+        } catch (IOException e) {
+            System.out.println("Intel PCM execution failed: " + e.getMessage());
+        }
+
+        return p;
+    }
+
+    private void endProcess(Process p) {
+      if (p != null) {
+        p.destroyForcibly();
+      }
+    }
+
     public TornadoExecutionResult execute() {
         checkProfilerEnabled();
+
+        TornadoDevice device = tornadoExecutor.getDevice(0);
+
+        Process p = null;
+        if (device.getDeviceType() == TornadoDeviceType.CPU)  {
+          p = runIntelPCM();
+        }
         tornadoExecutor.execute(executionPackage);
+        endProcess(p);
+
         return new TornadoExecutionResult(new TornadoProfilerResult(tornadoExecutor));
     }
 
