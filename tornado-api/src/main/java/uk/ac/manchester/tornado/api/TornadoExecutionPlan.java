@@ -121,7 +121,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
     private Process runIntelPCM() {
         Process p = null;
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "0.001").inheritIO();
+            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "--", "sleep 3600").inheritIO();
             // File outputFile = new File("cpu.metrics");
             // processBuilder.redirectOutput(outputFile);
             // processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
@@ -135,9 +135,31 @@ public class TornadoExecutionPlan implements AutoCloseable {
         return p;
     }
 
+    private void killSleepProcess() {
+        try {
+            String command = "ps -e | grep sleep | awk '{print $1}'";
+            ProcessBuilder processBuilder = new ProcessBuilder("bash", "-c", command);
+            Process process = processBuilder.start();
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String pid = reader.readLine();
+
+            if (pid != null && !pid.isEmpty()) {
+                ProcessBuilder killBuilder = new ProcessBuilder("bash", "-c", "kill -9 " + pid);
+                Process killProcess = killBuilder.start();
+
+                int killExitCode = killProcess.waitFor();
+            }
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
+
+    }
+
     private void endProcess(Process p) {
       if (p != null) {
-        p.destroyForcibly();
+        killSleepProcess();
+        p.waitFor();
       }
     }
 
