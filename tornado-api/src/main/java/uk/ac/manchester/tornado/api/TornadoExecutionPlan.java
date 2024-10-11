@@ -140,7 +140,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
             String command = "kill -9 $(ps aux | grep -i sleep | awk '{print$2}' | head -n 1)";
             ProcessBuilder processBuilder = new ProcessBuilder("bash", "-c", command);
             int killExitCode = 1;
-            while (killExitCode != 0) {
+            // while (killExitCode != 0) {
               Process process = processBuilder.start();
               killExitCode = process.waitFor();
 
@@ -155,7 +155,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
                 }
               }
               
-            }
+            // }
             
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
@@ -184,9 +184,10 @@ public class TornadoExecutionPlan implements AutoCloseable {
           p = runIntelPCM();
         }
         tornadoExecutor.execute(executionPackage);
+        TornadoExecutionResult result = new TornadoExecutionResult(new TornadoProfilerResult(tornadoExecutor));
         endProcess(p);
 
-        return new TornadoExecutionResult(new TornadoProfilerResult(tornadoExecutor));
+        return result;
     }
 
     private void checkProfilerEnabled() {
