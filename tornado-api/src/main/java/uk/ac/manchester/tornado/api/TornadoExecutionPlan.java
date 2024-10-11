@@ -165,9 +165,9 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
     private void endProcess(Process p) {
       if (p != null) {
-        Thread.sleep(500);
-        killSleepProcess();
         try {
+          Thread.sleep(500);
+          killSleepProcess();
           p.waitFor();
         } catch (InterruptedException e) {
           e.printStackTrace();
