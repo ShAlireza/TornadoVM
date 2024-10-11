@@ -128,7 +128,7 @@ public class TornadoExecutionPlan implements AutoCloseable {
             // processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
             // processBuilder.redirectOutput();
             p = processBuilder.start();
-            Thread.sleep(100);
+            Thread.sleep(1000);
         } catch (IOException | InterruptedException e) {
             System.out.println("Intel PCM execution failed: " + e.getMessage());
         }
