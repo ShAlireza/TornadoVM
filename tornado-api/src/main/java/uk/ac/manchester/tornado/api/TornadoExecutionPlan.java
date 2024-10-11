@@ -121,14 +121,15 @@ public class TornadoExecutionPlan implements AutoCloseable {
     private Process runIntelPCM() {
         Process p = null;
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder("bash", "-c", "pcm-power -- sleep 3600").inheritIO();
+            ProcessBuilder processBuilder = new ProcessBuilder("pcm-power", "0.01").inheritIO();
             // File outputFile = new File("cpu.metrics");
             // processBuilder.redirectOutput(outputFile);
             // processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             // processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
             // processBuilder.redirectOutput();
             p = processBuilder.start();
-        } catch (IOException e) {
+            Thread.sleep(100);
+        } catch (IOException | InterruptedException e) {
             System.out.println("Intel PCM execution failed: " + e.getMessage());
         }
 
@@ -165,13 +166,13 @@ public class TornadoExecutionPlan implements AutoCloseable {
 
     private void endProcess(Process p) {
       if (p != null) {
-        try {
-          Thread.sleep(500);
-          killSleepProcess();
-          p.waitFor();
-        } catch (InterruptedException e) {
-          e.printStackTrace();
-        }
+        // try {
+          // Thread.sleep(500);
+          // killSleepProcess();
+          p.destroy();
+        // } catch (InterruptedException e) {
+          // e.printStackTrace();
+        // }
       }
     }
 
