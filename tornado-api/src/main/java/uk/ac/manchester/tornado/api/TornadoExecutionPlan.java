@@ -178,15 +178,15 @@ public class TornadoExecutionPlan implements AutoCloseable {
     public TornadoExecutionResult execute() {
         checkProfilerEnabled();
 
-        TornadoDevice device = tornadoExecutor.getDevice(0);
+        // TornadoDevice device = tornadoExecutor.getDevice(0);
 
-        Process p = null;
-        if (device.getDeviceType() == TornadoDeviceType.CPU)  {
-          p = runIntelPCM();
-        }
+        // Process p = null;
+        // if (device.getDeviceType() == TornadoDeviceType.CPU)  {
+        //   p = runIntelPCM();
+        // }
         tornadoExecutor.execute(executionPackage);
         TornadoExecutionResult result = new TornadoExecutionResult(new TornadoProfilerResult(tornadoExecutor));
-        endProcess(p);
+        // endProcess(p);
 
         return result;
     }
